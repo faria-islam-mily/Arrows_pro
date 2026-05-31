@@ -1,0 +1,44 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/generated_plugin_registrant.*
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+.classpath
+.project
+.settings/
+
+# Android
+**/android/**/gradle-wrapper.jar
+**/android/.gradle
+**/android/captures/
+**/android/local.properties
+**/android/key.properties
+*.keystore
+*.jks
+
+# iOS / macOS
+**/ios/Flutter/.last_build_id
+**/Pods/
+**/.symlinks/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local build/run helper artifacts created during setup (machine-specific)
+*.log
+*.pid
+install-when-ready.ps1
+install-and-run.ps1
