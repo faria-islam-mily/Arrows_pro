@@ -112,7 +112,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
             if (!mounted) return;
             final dx = (cons.maxWidth - w) / 2;
             final dy = (cons.maxHeight - h) / 2;
-            _tc.value = Matrix4.identity()..translate(dx, dy);
+            _tc.value = Matrix4.identity()..translateByDouble(dx, dy, 0, 1);
           });
         }
 
@@ -187,7 +187,7 @@ class _BoardPainter extends CustomPainter {
     final stroke = Paint()
       ..color = col.withValues(alpha: opacity)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = cell * 0.14
+      ..strokeWidth = cell * 0.26
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     final fill = Paint()
@@ -216,11 +216,12 @@ class _BoardPainter extends CustomPainter {
     canvas.drawPath(shaft, stroke);
 
     // Solid triangular arrowhead — bold and unambiguous, like the reference.
-    // Tip is pulled in so the head sits inside its cell rather than poking out.
-    final apex = headCenter + dir * (cell * 0.34);
-    final base = headCenter - dir * (cell * 0.12);
-    final c1 = base + perp * (cell * 0.22);
-    final c2 = base - perp * (cell * 0.22);
+    // Sized to sit clearly wider than the thick shaft and pulled in so it stays
+    // inside its cell rather than poking out.
+    final apex = headCenter + dir * (cell * 0.46);
+    final base = headCenter + dir * (cell * 0.02);
+    final c1 = base + perp * (cell * 0.30);
+    final c2 = base - perp * (cell * 0.30);
     final head = Path()
       ..moveTo(apex.dx, apex.dy)
       ..lineTo(c1.dx, c1.dy)
