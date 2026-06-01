@@ -1,6 +1,6 @@
 import 'dart:math';
 
-/// Direction an arrow's head points (the way it slides to escape).
+/// Direction an arrow points (the way it slides to escape).
 enum ArrowDir { up, down, left, right }
 
 extension ArrowDirX on ArrowDir {
@@ -21,15 +21,24 @@ extension ArrowDirX on ArrowDir {
   Point<int> get delta => Point(dCol, dRow);
 }
 
-/// An arrow on the board: an ordered poly-line of grid cells (tail → head),
-/// drawn as a thick rounded stroke with an arrowhead at [head]. A straight
-/// arrow has collinear cells; a bent arrow turns. It escapes by sliding in
-/// [dir] (the head's direction).
+/// A rigid arrow on the board, occupying one or more collinear cells and
+/// pointing in [dir]. It escapes by sliding straight in [dir] when the corridor
+/// ahead of its [head] is clear of other arrows.
+///
+/// Levels are built from single-cell arrows via [GridArrow.single]; the general
+/// list form is kept for future multi-cell pieces (e.g. a 2-long block).
 ///
 /// Cells use [Point] as (x = column, y = row).
 class GridArrow {
   GridArrow({required this.id, required this.cells, required this.dir})
       : assert(cells.isNotEmpty);
+
+  /// A single-cell arrow at [cell] pointing in [dir] — the standard piece.
+  GridArrow.single({
+    required this.id,
+    required Point<int> cell,
+    required this.dir,
+  }) : cells = [cell];
 
   final int id;
   final List<Point<int>> cells; // tail .. head

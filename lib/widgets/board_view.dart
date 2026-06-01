@@ -7,8 +7,8 @@ import '../game/game_controller.dart';
 import '../models/grid_arrow.dart';
 import '../state/app_scope.dart';
 
-/// Renders the arrow board with thick rounded strokes + arrowheads, handles
-/// taps (hit-testing cells), and slides arrows off-board when they escape.
+/// Renders the arrow board with thick rounded strokes + solid arrowheads,
+/// handles taps (hit-testing cells), and slides arrows off-board when escaping.
 class BoardView extends StatefulWidget {
   const BoardView({
     super.key,
@@ -30,6 +30,10 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
   final _exitingArrows = <int, GridArrow>{};
   final _exitProgress = <int, double>{};
   final _controllers = <int, AnimationController>{};
+
+  // Pan/zoom transform for the freely-draggable board.
+  final TransformationController _tc = TransformationController();
+  bool _didCenter = false; // center the board once on first layout
 
   int? _blockedId; // arrow flashing red after a blocked tap
   Timer? _blockTimer;
@@ -54,11 +58,14 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
   void _startExit(GridArrow a) {
     final ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 340),
     );
+    // Ease-in so the arrow starts gently then accelerates as it shoots off the
+    // board — a satisfying "released" feel rather than a linear slide.
+    final curved = CurvedAnimation(parent: ctrl, curve: Curves.easeInCubic);
     _controllers[a.id] = ctrl;
     _exitingArrows[a.id] = a;
-    ctrl.addListener(() => setState(() => _exitProgress[a.id] = ctrl.value));
+    curved.addListener(() => setState(() => _exitProgress[a.id] = curved.value));
     ctrl.forward().whenComplete(() {
       ctrl.dispose();
       setState(() {
@@ -72,6 +79,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
   @override
   void dispose() {
     _blockTimer?.cancel();
+    _tc.dispose();
     for (final c in _controllers.values) {
       c.dispose();
     }
@@ -96,35 +104,47 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
         final w = cell * g.cols + margin * 2;
         final h = cell * g.rows + margin * 2;
 
-        return Center(
-          child: InteractiveViewer(
-            panEnabled: true,
-            minScale: 0.6,
-            maxScale: 5,
-            // Free movement across the whole screen (drag the puzzle anywhere).
-            boundaryMargin: const EdgeInsets.all(double.infinity),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (d) {
-                final col = ((d.localPosition.dx - margin) / cell).floor();
-                final row = ((d.localPosition.dy - margin) / cell).floor();
-                if (row >= 0 && row < g.rows && col >= 0 && col < g.cols) {
-                  _handleTapCell(row, col);
-                }
-              },
-              child: CustomPaint(
-                size: Size(w, h),
-                painter: _BoardPainter(
-                  game: g,
-                  cell: cell,
-                  margin: margin,
-                  hintId: widget.hintId,
-                  blockedId: _blockedId,
-                  color: palette.arrow,
-                  hintColor: palette.arrowActive,
-                  exitingArrows: _exitingArrows,
-                  exitProgress: _exitProgress,
-                ),
+        // Center the board once on first layout. After that the user is free to
+        // drag it anywhere (we never re-center, so their pan isn't reset).
+        if (!_didCenter) {
+          _didCenter = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final dx = (cons.maxWidth - w) / 2;
+            final dy = (cons.maxHeight - h) / 2;
+            _tc.value = Matrix4.identity()..translate(dx, dy);
+          });
+        }
+
+        return InteractiveViewer(
+          transformationController: _tc,
+          panEnabled: true,
+          // Natural size so the board can be dragged freely anywhere on screen.
+          constrained: false,
+          minScale: 0.6,
+          maxScale: 5,
+          boundaryMargin: const EdgeInsets.all(double.infinity),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (d) {
+              final col = ((d.localPosition.dx - margin) / cell).floor();
+              final row = ((d.localPosition.dy - margin) / cell).floor();
+              if (row >= 0 && row < g.rows && col >= 0 && col < g.cols) {
+                _handleTapCell(row, col);
+              }
+            },
+            child: CustomPaint(
+              size: Size(w, h),
+              painter: _BoardPainter(
+                game: g,
+                cell: cell,
+                margin: margin,
+                hintId: widget.hintId,
+                blockedId: _blockedId,
+                color: palette.arrow,
+                hintColor: palette.arrowActive,
+                exitingArrows: _exitingArrows,
+                exitProgress: _exitProgress,
               ),
             ),
           ),
@@ -164,38 +184,49 @@ class _BoardPainter extends CustomPainter {
 
   void _drawArrow(Canvas canvas, GridArrow a, Color col, double opacity,
       Offset shift) {
-    final paint = Paint()
+    final stroke = Paint()
       ..color = col.withValues(alpha: opacity)
       ..style = PaintingStyle.stroke
       ..strokeWidth = cell * 0.14
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = col.withValues(alpha: opacity)
+      ..style = PaintingStyle.fill;
 
     final dir = Offset(a.dir.dCol.toDouble(), a.dir.dRow.toDouble());
     final perp = Offset(-dir.dy, dir.dx);
     final pts = a.cells.map((p) => _center(p) + shift).toList();
+    final headCenter = pts.last;
 
-    // Shaft: tail back-edge → every cell centre → the arrow tip.
-    final start = pts.first - dir * (cell * 0.28);
-    final tip = pts.last + dir * (cell * 0.40);
-    final shaft = Path()..moveTo(start.dx, start.dy);
-    for (final p in pts) {
-      shaft.lineTo(p.dx, p.dy);
+    // Shaft: a clean line through every cell centre with a plain rounded tail.
+    // It ends at the head cell, where the solid arrowhead takes over. (A
+    // length-1 arrow gets a short stub so it still reads as an arrow.)
+    final shaft = Path();
+    if (pts.length == 1) {
+      final tail = headCenter - dir * (cell * 0.42);
+      shaft.moveTo(tail.dx, tail.dy);
+      shaft.lineTo(headCenter.dx, headCenter.dy);
+    } else {
+      shaft.moveTo(pts.first.dx, pts.first.dy);
+      for (final p in pts.skip(1)) {
+        shaft.lineTo(p.dx, p.dy);
+      }
     }
-    shaft.lineTo(tip.dx, tip.dy);
-    canvas.drawPath(shaft, paint);
+    canvas.drawPath(shaft, stroke);
 
-    // Open chevron arrowhead (same stroke weight) — two barbs angling back
-    // from the tip, like the reference game (not a filled triangle).
-    const back = 0.26;
-    const spread = 0.20;
-    final b1 = tip - dir * (cell * back) + perp * (cell * spread);
-    final b2 = tip - dir * (cell * back) - perp * (cell * spread);
-    final chevron = Path()
-      ..moveTo(b1.dx, b1.dy)
-      ..lineTo(tip.dx, tip.dy)
-      ..lineTo(b2.dx, b2.dy);
-    canvas.drawPath(chevron, paint);
+    // Solid triangular arrowhead — bold and unambiguous, like the reference.
+    // Tip is pulled in so the head sits inside its cell rather than poking out.
+    final apex = headCenter + dir * (cell * 0.34);
+    final base = headCenter - dir * (cell * 0.12);
+    final c1 = base + perp * (cell * 0.22);
+    final c2 = base - perp * (cell * 0.22);
+    final head = Path()
+      ..moveTo(apex.dx, apex.dy)
+      ..lineTo(c1.dx, c1.dy)
+      ..lineTo(c2.dx, c2.dy)
+      ..close();
+    canvas.drawPath(head, fill);
   }
 
   @override
