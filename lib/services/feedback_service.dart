@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import '../state/app_state.dart';
+import 'audio_service.dart';
 
 /// Central place for haptics and sound, gated by the user's settings toggles.
 /// Call the semantic methods (`tapSuccess`, `blocked`, `win`) from the UI so
@@ -37,9 +38,8 @@ class FeedbackService {
     if (state.vibrationOn) HapticFeedback.selectionClick();
   }
 
-  // ignore: avoid_unused_constructor_parameters
   void _play(String clip) {
     if (!state.soundOn) return;
-    // TODO(sound): with audioplayers added, play `assets/sfx/$clip.mp3` here.
+    AudioService.instance.sfx(clip); // no-op until clips are added to assets/sfx
   }
 }

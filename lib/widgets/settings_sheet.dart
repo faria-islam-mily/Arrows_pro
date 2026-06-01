@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/audio_service.dart';
 import '../state/app_scope.dart';
-// ignore: unused_import
-import '../state/app_state.dart';
 
 /// Bottom sheet with Sound / Vibration / Music toggles, plus an optional
 /// Restart action (pass [onRestart] from the game screen). Mirrors the look of
@@ -60,7 +59,10 @@ class _SettingsBody extends StatelessWidget {
               icon: Icons.music_note_outlined,
               label: 'Music',
               value: state.musicOn,
-              onChanged: state.setMusic,
+              onChanged: (v) {
+                state.setMusic(v);
+                AudioService.instance.setMusicEnabled(v);
+              },
             ),
             if (onRestart != null) ...[
               const SizedBox(height: 16),

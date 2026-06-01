@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'data/palettes.dart';
 import 'screens/splash_screen.dart';
+import 'services/audio_service.dart';
 import 'state/app_scope.dart';
 import 'state/app_state.dart';
 import 'state/storage.dart';
@@ -11,6 +12,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final storage = await Storage.open();
   final state = AppState(storage);
+  // Start the looping background music if the player has it enabled (no-op
+  // until a track is added to assets/music/ambient.mp3).
+  if (state.musicOn) AudioService.instance.setMusicEnabled(true);
   runApp(AppScope(state: state, child: const ArrowProApp()));
 }
 
