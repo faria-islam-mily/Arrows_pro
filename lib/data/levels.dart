@@ -32,8 +32,8 @@ String _difficultyFor(int n) {
   return 'Expert';
 }
 
-/// Longer winding arrows on bigger boards.
-int _maxLenFor(int size) => (size * 0.8).round().clamp(8, 22);
+/// Long winding arrows that fill the shape like a maze (few short stubs).
+int _maxLenFor(int size) => (size * 1.6).round().clamp(16, 44);
 
 /// The mask for level [n]: a small filled square for the tutorial, a hand-drawn
 /// silhouette at milestone levels, otherwise a unique procedural intricate one.
