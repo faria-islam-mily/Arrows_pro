@@ -23,7 +23,7 @@ class AudioService {
       final player = _sfxPool[_sfxIndex];
       _sfxIndex = (_sfxIndex + 1) % _sfxPool.length;
       await player.stop();
-      await player.play(AssetSource('sfx/$clip.mp3'), volume: 0.7);
+      await player.play(AssetSource('sfx/$clip.wav'), volume: 0.7);
     } catch (_) {
       // asset missing / platform hiccup — ignore
     }
@@ -33,7 +33,7 @@ class AudioService {
     try {
       if (on) {
         if (_musicPlaying) return;
-        await _music.play(AssetSource('music/ambient.mp3'), volume: 0.35);
+        await _music.play(AssetSource('music/ambient.wav'), volume: 0.35);
         _musicPlaying = true;
       } else {
         await _music.stop();
