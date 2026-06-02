@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/level_titles.dart';
 import '../data/levels.dart';
 import '../state/app_scope.dart';
 import '../widgets/daily_reward_sheet.dart';
@@ -120,8 +121,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             : const Icon(Icons.lock,
                                 size: 18, color: Colors.white),
                       ),
-                      title: Text('Level ${level.number}'),
-                      subtitle: Text(level.difficulty),
+                      title: Text(levelTitle(level.number)),
+                      subtitle: Text('Level ${level.number} · ${level.difficulty}'),
                       trailing: unlocked
                           ? (stars > 0
                               ? _Stars(stars: stars)

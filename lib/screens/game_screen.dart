@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/level_titles.dart';
 import '../data/levels.dart';
 import '../game/game_controller.dart';
 import '../models/level.dart';
@@ -211,7 +212,12 @@ class _GameScreenState extends State<GameScreen> {
                           child: Column(
                             children: [
                               Text(
-                                'Level ${widget.level.number}',
+                                widget.level.difficulty == 'Daily'
+                                    ? 'Daily Challenge'
+                                    : levelTitle(widget.level.number),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: palette.primary,
                                   fontWeight: FontWeight.w800,
@@ -219,11 +225,12 @@ class _GameScreenState extends State<GameScreen> {
                                 ),
                               ),
                               Text(
-                                widget.level.difficulty,
+                                'Level ${widget.level.number} · '
+                                '${widget.level.difficulty}',
                                 style: TextStyle(
                                   color: palette.accent,
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                  fontSize: 12,
                                 ),
                               ),
                             ],

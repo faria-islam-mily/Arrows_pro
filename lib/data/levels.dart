@@ -32,16 +32,16 @@ int _block(int n) => (n - 1) ~/ 5; // 0,1,2,... which block of five
 String _difficultyFor(int n) {
   if (n == 1) return 'Tutorial';
   const ladder = ['Easy', 'Medium', 'Hard', 'Expert'];
-  const within = [0, 0, 1, 1, 2]; // Easy,Easy,Medium,Medium,Hard inside a block
-  final drift = _block(n) ~/ 3; // bump the whole block up a notch every 3 blocks
+  const within = [0, 1, 1, 2, 2]; // Easy,Medium,Medium,Hard,Hard inside a block
+  final drift = _block(n) ~/ 2; // bump the whole block up a notch every 2 blocks
   return ladder[(within[_pos(n)] + drift).clamp(0, ladder.length - 1)];
 }
 
 /// Size tier (0 tiny .. 3 big) for level n: grows within a block to a big peak
 /// on the 5th level, resets, and drifts up slowly over the run.
 int _tierFor(int n) {
-  const within = [0, 1, 1, 2, 3]; // tiny, small, small, medium, BIG peak
-  final drift = _block(n) ~/ 3;
+  const within = [1, 1, 2, 3, 3]; // small, small, medium, big, BIG peak
+  final drift = _block(n) ~/ 2;
   return (within[_pos(n)] + drift).clamp(0, Shapes.tiers.length - 1);
 }
 
