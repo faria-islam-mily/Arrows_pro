@@ -212,8 +212,8 @@ class _GameScreenState extends State<GameScreen> {
                           child: Column(
                             children: [
                               Text(
-                                widget.level.difficulty == 'Daily'
-                                    ? 'Daily Challenge'
+                                widget.level.name.isNotEmpty
+                                    ? widget.level.name
                                     : levelTitle(widget.level.number,
                                         total: kLevels.length),
                                 textAlign: TextAlign.center,

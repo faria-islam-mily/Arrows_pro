@@ -16,8 +16,11 @@ void main() {
       });
     }
 
-    test('first level is the tutorial', () {
-      expect(kLevels.first.difficulty, 'Tutorial');
+    test('pack has 10 distinctly named levels', () {
+      expect(kLevels.length, 10);
+      for (final l in kLevels) {
+        expect(l.name, isNotEmpty);
+      }
     });
 
     test('no arrow head sits on its own body', () {

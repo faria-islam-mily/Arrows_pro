@@ -8,12 +8,17 @@ class Level {
     required this.cols,
     required this.arrows,
     this.difficulty = 'Easy',
+    this.name = '',
   });
 
   final int number;
   final int rows;
   final int cols;
   final String difficulty;
+
+  /// Human-facing name for the level (e.g. its shape). Empty falls back to a
+  /// generated themed title.
+  final String name;
 
   /// Factory builders so each access gives fresh, mutable arrows.
   final List<GridArrow> Function() arrows;
