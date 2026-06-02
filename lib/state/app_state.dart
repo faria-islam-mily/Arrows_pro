@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../data/daily_rewards.dart';
 import 'storage.dart';
 
 /// Persistent app-wide state: selected theme, level progress, daily streak,
@@ -22,6 +23,10 @@ class AppState extends ChangeNotifier {
   static const _kMusic = 'musicOn';
   static const _kTutorialSeen = 'tutorialSeen';
   static const _kDailyDone = 'dailyDoneDate';
+  static const _kCoins = 'coins';
+  static const _kHints = 'hints';
+  static const _kRewardDay = 'rewardDay';
+  static const _kRewardClaimed = 'rewardClaimedDate';
 
   int _themeIndex = 0;
   int _unlockedLevel = 1; // highest level number the player may open
@@ -35,6 +40,11 @@ class AppState extends ChangeNotifier {
   bool _tutorialSeen = false;
   String? _dailyDone; // yyyy-mm-dd the daily challenge was last completed
 
+  int _coins = 0;
+  int _hints = 1; // start with one free hint
+  int _rewardDay = 0; // last claimed day in the 1..7 cycle (0 = none yet)
+  String? _rewardClaimed; // yyyy-mm-dd of the last daily-reward claim
+
   int get themeIndex => _themeIndex;
   int get unlockedLevel => _unlockedLevel;
   int get streak => _streak;
@@ -43,6 +53,21 @@ class AppState extends ChangeNotifier {
   bool get vibrationOn => _vibrationOn;
   bool get musicOn => _musicOn;
   bool get tutorialSeen => _tutorialSeen;
+  int get coins => _coins;
+  int get hints => _hints;
+
+  /// Today's daily reward can still be collected.
+  bool get canClaimDaily => _rewardClaimed != _dateKey(DateTime.now());
+
+  /// Which day of the 1..7 cycle is offered today (advances if yesterday was
+  /// claimed, restarts at 1 on a first visit or a missed day).
+  int get offeredRewardDay {
+    final now = _dateKey(DateTime.now());
+    final yesterday = _dateKey(DateTime.now().subtract(const Duration(days: 1)));
+    if (_rewardClaimed == now) return _rewardDay; // already claimed today
+    if (_rewardClaimed == yesterday) return _rewardDay >= 7 ? 1 : _rewardDay + 1;
+    return 1; // first visit or a broken streak → restart the cycle
+  }
 
   bool isUnlocked(int levelNumber) => levelNumber <= _unlockedLevel;
 
@@ -71,6 +96,62 @@ class AppState extends ChangeNotifier {
     _musicOn = _storage.getBool(_kMusic, true);
     _tutorialSeen = _storage.getBool(_kTutorialSeen, false);
     _dailyDone = _storage.getString(_kDailyDone);
+    _coins = _storage.getInt(_kCoins, 0);
+    _hints = _storage.getInt(_kHints, 1);
+    _rewardDay = _storage.getInt(_kRewardDay, 0);
+    _rewardClaimed = _storage.getString(_kRewardClaimed);
+  }
+
+  Future<void> addCoins(int n) async {
+    if (n == 0) return;
+    _coins += n;
+    notifyListeners();
+    await _storage.setInt(_kCoins, _coins);
+  }
+
+  /// Spend coins if affordable; returns true on success.
+  Future<bool> spendCoins(int n) async {
+    if (_coins < n) return false;
+    _coins -= n;
+    notifyListeners();
+    await _storage.setInt(_kCoins, _coins);
+    return true;
+  }
+
+  Future<void> addHints(int n) async {
+    _hints += n;
+    notifyListeners();
+    await _storage.setInt(_kHints, _hints);
+  }
+
+  /// Consume one hint token; returns true if one was available.
+  Future<bool> useHint() async {
+    if (_hints <= 0) return false;
+    _hints -= 1;
+    notifyListeners();
+    await _storage.setInt(_kHints, _hints);
+    return true;
+  }
+
+  /// Claim today's daily reward. Returns the granted reward, or null if it was
+  /// already claimed today.
+  Future<DailyReward?> claimDailyReward() async {
+    if (!canClaimDaily) return null;
+    final day = offeredRewardDay;
+    final reward = rewardForDay(day);
+    _rewardDay = day;
+    _rewardClaimed = _dateKey(DateTime.now());
+    if (reward.isCoins) {
+      _coins += reward.amount;
+    } else {
+      _hints += reward.amount;
+    }
+    notifyListeners();
+    await _storage.setInt(_kRewardDay, _rewardDay);
+    await _storage.setString(_kRewardClaimed, _rewardClaimed!);
+    await _storage.setInt(_kCoins, _coins);
+    await _storage.setInt(_kHints, _hints);
+    return reward;
   }
 
   Future<void> setTheme(int index) async {

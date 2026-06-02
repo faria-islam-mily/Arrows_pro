@@ -29,6 +29,7 @@ class _GameScreenState extends State<GameScreen> {
   bool _showConfetti = false;
   bool _showTutorial = false;
   int _lastRemaining = 0;
+  int _coinsEarned = 0;
 
   @override
   void initState() {
@@ -63,6 +64,10 @@ class _GameScreenState extends State<GameScreen> {
       if (inPack) state.recordStars(widget.level.number, _lives);
       if (widget.level.difficulty == 'Daily') state.markDailyDone();
 
+      // Coins: base + a bonus per heart still held (rewards clean solves).
+      _coinsEarned = 10 + _lives * 5;
+      state.addCoins(_coinsEarned);
+
       _feedback?.win();
       setState(() => _showConfetti = true);
       Future.delayed(const Duration(milliseconds: 700), _showWin);
@@ -76,7 +81,20 @@ class _GameScreenState extends State<GameScreen> {
     if (_lives == 0) _showFail();
   }
 
-  void _useHint() {
+  Future<void> _useHint() async {
+    if (_game.hintArrowId() == null) return; // nothing to reveal
+    final state = AppScope.read(context);
+    // Spend a hint token; fall back to 30 coins.
+    final ok = await state.useHint() || await state.spendCoins(30);
+    if (!ok) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hints — collect a daily reward or earn coins.'),
+        ),
+      );
+      return;
+    }
     _feedback?.tick();
     setState(() => _hintId = _game.hintArrowId());
   }
@@ -108,6 +126,7 @@ class _GameScreenState extends State<GameScreen> {
         title: 'You Did It!',
         subtitle: 'Level ${widget.level.number} completed!',
         stars: _lives,
+        coins: _coinsEarned,
         primaryLabel: (inPack && next < kLevels.length) ? 'Next Level' : 'Home',
         onPrimary: () {
           Navigator.of(context).pop();
@@ -151,6 +170,7 @@ class _GameScreenState extends State<GameScreen> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final progress = _game.progress;
+    final hints = context.appState.hints;
 
     return Scaffold(
       backgroundColor: palette.background,
@@ -264,7 +284,7 @@ class _GameScreenState extends State<GameScreen> {
                 child: FilledButton.icon(
                   onPressed: _useHint,
                   icon: const Icon(Icons.lightbulb_outline),
-                  label: const Text('Hint'),
+                  label: Text(hints > 0 ? 'Hint · $hints' : 'Hint · 30 coins'),
                 ),
               ),
             ),
@@ -295,6 +315,7 @@ class _ResultDialog extends StatelessWidget {
     required this.primaryLabel,
     required this.onPrimary,
     this.stars,
+    this.coins = 0,
   });
 
   final String title;
@@ -302,6 +323,7 @@ class _ResultDialog extends StatelessWidget {
   final String primaryLabel;
   final VoidCallback onPrimary;
   final int? stars; // 1..3 to show a rating; null hides it
+  final int coins; // coins earned this level; 0 hides the row
 
   @override
   Widget build(BuildContext context) {
@@ -331,6 +353,22 @@ class _ResultDialog extends StatelessWidget {
                       size: 40,
                       color: const Color(0xFFE9C46A),
                     ),
+                ],
+              ),
+            ],
+            if (coins > 0) ...[
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.monetization_on,
+                      color: Color(0xFFF4B400), size: 22),
+                  const SizedBox(width: 6),
+                  Text(
+                    '+$coins',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
                 ],
               ),
             ],
