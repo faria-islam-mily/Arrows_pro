@@ -93,6 +93,7 @@ class LevelGenerator {
     for (final start in startOrder) {
       if (used.contains(start)) continue;
       final path = <Point<int>>[start];
+      final pathSet = <Point<int>>{start};
       used.add(start);
       var cur = start;
       Point<int>? last;
@@ -101,7 +102,21 @@ class LevelGenerator {
         final cands = <Point<int>>[];
         for (final d in ArrowDir.values) {
           final nb = Point(cur.x + d.dCol, cur.y + d.dRow);
-          if (inMask.contains(nb) && !used.contains(nb)) cands.add(nb);
+          if (!inMask.contains(nb) || used.contains(nb)) continue;
+          // No self-touching: a candidate may not sit beside any cell of this
+          // snake other than `cur`. This stops the snake coiling against itself
+          // — which is exactly what let a head end up pointing into its own
+          // body. A non-self-touching path can never have an own cell straight
+          // ahead of either end.
+          var touchesSelf = false;
+          for (final e in ArrowDir.values) {
+            final adj = Point(nb.x + e.dCol, nb.y + e.dRow);
+            if (adj != cur && pathSet.contains(adj)) {
+              touchesSelf = true;
+              break;
+            }
+          }
+          if (!touchesSelf) cands.add(nb);
         }
         if (cands.isEmpty) break;
 
@@ -124,6 +139,7 @@ class LevelGenerator {
 
         last = Point(next.x - cur.x, next.y - cur.y);
         path.add(next);
+        pathSet.add(next);
         used.add(next);
         cur = next;
       }
@@ -140,33 +156,21 @@ class LevelGenerator {
   static bool _headOnBody(List<Point<int>> cells, ArrowDir d) =>
       cells.contains(Point(cells.last.x + d.dCol, cells.last.y + d.dRow));
 
-  /// Candidate (cells, head-direction) pairs for a snake. For each end we try
-  /// the natural straight continuation FIRST (so most arrows point along their
-  /// body), then the perpendicular turns — but skip any direction whose
-  /// forward cell is the snake's own body, so the head is never obscured.
+  /// Candidate (cells, head-direction) pairs: a snake exits from one of its two
+  /// ends, and the arrowhead ALWAYS points straight along that end's last
+  /// segment (never turned sideways). Because growth is non-self-touching, the
+  /// cell straight ahead of either end is never the snake's own body.
   static List<({List<Point<int>> cells, ArrowDir dir})> _orientations(
       List<Point<int>> cells) {
-    final ends = cells.length == 1
-        ? [cells]
-        : [cells, cells.reversed.toList()];
-    final out = <({List<Point<int>> cells, ArrowDir dir})>[];
-    for (final oriented in ends) {
-      final own = oriented.toSet();
-      final head = oriented.last;
-      final dirs = <ArrowDir>[];
-      if (oriented.length >= 2) {
-        final prev = oriented[oriented.length - 2];
-        dirs.add(_vec(head.x - prev.x, head.y - prev.y)); // straight first
-      }
-      for (final d in ArrowDir.values) {
-        if (!dirs.contains(d)) dirs.add(d);
-      }
-      for (final d in dirs) {
-        if (own.contains(Point(head.x + d.dCol, head.y + d.dRow))) continue;
-        out.add((cells: oriented, dir: d));
-      }
+    if (cells.length == 1) {
+      return [for (final d in ArrowDir.values) (cells: cells, dir: d)];
     }
-    return out;
+    final fwd = _vec(cells.last.x - cells[cells.length - 2].x,
+        cells.last.y - cells[cells.length - 2].y);
+    final rev = cells.reversed.toList();
+    final bwd = _vec(rev.last.x - rev[rev.length - 2].x,
+        rev.last.y - rev[rev.length - 2].y);
+    return [(cells: cells, dir: fwd), (cells: rev, dir: bwd)];
   }
 
   static bool _rayClear(List<Point<int>> cells, ArrowDir d,
@@ -201,6 +205,7 @@ class LevelGenerator {
           if (j != i) blockers.addAll(cellsOf[j]);
         }
         for (final o in _orientations(snakes[i])) {
+          if (_headOnBody(o.cells, o.dir)) continue; // never obscure the head
           if (_rayClear(o.cells, o.dir, blockers, rows, cols)) {
             chosen[i] = o;
             remaining.remove(i);
