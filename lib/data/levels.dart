@@ -1,7 +1,15 @@
+import 'dart:math';
+
 import '../game/level_generator.dart';
 import '../models/grid_arrow.dart';
 import '../models/level.dart';
 import 'intricate_shapes.dart';
+import 'shapes.dart';
+
+/// Hand-drawn silhouettes placed at specific milestone levels.
+final Map<int, List<String>> _special = {
+  100: Shapes.dragon,
+};
 
 /// A solid rectangle mask (every cell filled with arrows).
 List<String> _filled(int rows, int cols) =>
@@ -27,17 +35,19 @@ String _difficultyFor(int n) {
 /// Longer winding arrows on bigger boards.
 int _maxLenFor(int size) => (size * 0.8).round().clamp(8, 22);
 
-/// The mask for level [n]: a small filled square for the tutorial, otherwise a
-/// unique procedurally-generated intricate silhouette.
-List<String> _maskFor(int n) =>
-    n == 1 ? _filled(6, 6) : IntricateShapes.mask(n, _sizeFor(n));
+/// The mask for level [n]: a small filled square for the tutorial, a hand-drawn
+/// silhouette at milestone levels, otherwise a unique procedural intricate one.
+List<String> _maskFor(int n) {
+  if (n == 1) return _filled(6, 6);
+  return _special[n] ?? IntricateShapes.mask(n, _sizeFor(n));
+}
 
 /// 200-level pack. Each level is seeded by its number (deterministic), and
 /// `GameController.solvable` is asserted for every one in the test-suite.
 final List<Level> kLevels = List<Level>.generate(200, (i) {
   final n = i + 1;
   final mask = _maskFor(n);
-  final maxLen = _maxLenFor(_sizeFor(n));
+  final maxLen = _maxLenFor(max(mask.length, mask[0].length));
   return Level(
     number: n,
     rows: mask.length,
