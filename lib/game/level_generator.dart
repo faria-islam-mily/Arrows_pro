@@ -134,17 +134,39 @@ class LevelGenerator {
 
   // ---- Stage 2: choose head/order so the board is solvable ------------------
 
+  /// True if the arrowhead (head + dir) would land on the arrow's OWN body —
+  /// which makes the head look swallowed by the shape. Such orientations are
+  /// rejected everywhere a head/direction is chosen.
+  static bool _headOnBody(List<Point<int>> cells, ArrowDir d) =>
+      cells.contains(Point(cells.last.x + d.dCol, cells.last.y + d.dRow));
+
+  /// Candidate (cells, head-direction) pairs for a snake. For each end we try
+  /// the natural straight continuation FIRST (so most arrows point along their
+  /// body), then the perpendicular turns — but skip any direction whose
+  /// forward cell is the snake's own body, so the head is never obscured.
   static List<({List<Point<int>> cells, ArrowDir dir})> _orientations(
       List<Point<int>> cells) {
-    if (cells.length == 1) {
-      return [for (final d in ArrowDir.values) (cells: cells, dir: d)];
+    final ends = cells.length == 1
+        ? [cells]
+        : [cells, cells.reversed.toList()];
+    final out = <({List<Point<int>> cells, ArrowDir dir})>[];
+    for (final oriented in ends) {
+      final own = oriented.toSet();
+      final head = oriented.last;
+      final dirs = <ArrowDir>[];
+      if (oriented.length >= 2) {
+        final prev = oriented[oriented.length - 2];
+        dirs.add(_vec(head.x - prev.x, head.y - prev.y)); // straight first
+      }
+      for (final d in ArrowDir.values) {
+        if (!dirs.contains(d)) dirs.add(d);
+      }
+      for (final d in dirs) {
+        if (own.contains(Point(head.x + d.dCol, head.y + d.dRow))) continue;
+        out.add((cells: oriented, dir: d));
+      }
     }
-    final fwd = _vec(cells.last.x - cells[cells.length - 2].x,
-        cells.last.y - cells[cells.length - 2].y);
-    final rev = cells.reversed.toList();
-    final bwd = _vec(rev.last.x - rev[rev.length - 2].x,
-        rev.last.y - rev[rev.length - 2].y);
-    return [(cells: cells, dir: fwd), (cells: rev, dir: bwd)];
+    return out;
   }
 
   static bool _rayClear(List<Point<int>> cells, ArrowDir d,
@@ -221,7 +243,8 @@ class LevelGenerator {
         if (cur.cells.length < 2) continue;
         if (_blockedAtStart(arrows, i, rows, cols)) continue; // already a link
         final trial = List<GridArrow>.of(arrows)..[i] = _flip(cur);
-        if (_blockedAtStart(trial, i, rows, cols) &&
+        if (!_headOnBody(trial[i].cells, trial[i].dir) &&
+            _blockedAtStart(trial, i, rows, cols) &&
             _solvable(trial, rows, cols)) {
           arrows = trial;
           changed = true;

@@ -1,9 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:arrow_pro/data/levels.dart';
 import 'package:arrow_pro/data/shapes.dart';
 import 'package:arrow_pro/game/game_controller.dart';
 import 'package:arrow_pro/game/level_generator.dart';
+import 'package:arrow_pro/models/grid_arrow.dart';
 
 void main() {
   group('Level pack', () {
@@ -15,6 +18,17 @@ void main() {
 
     test('first level is the tutorial', () {
       expect(kLevels.first.difficulty, 'Tutorial');
+    });
+
+    test('no arrow head sits on its own body', () {
+      for (final level in kLevels) {
+        for (final a in level.arrows()) {
+          final fwd = Point(a.head.x + a.dir.dCol, a.head.y + a.dir.dRow);
+          expect(a.cells.contains(fwd), isFalse,
+              reason: 'Level ${level.number}: arrow ${a.id} head points into '
+                  'its own body at $fwd');
+        }
+      }
     });
 
     test('levels are deterministic', () {
