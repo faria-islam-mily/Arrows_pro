@@ -7,6 +7,7 @@ import '../services/feedback_service.dart';
 import '../state/app_scope.dart';
 import '../widgets/board_view.dart';
 import '../widgets/confetti_overlay.dart';
+import '../widgets/level_thumbnail.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/tutorial_overlay.dart';
 
@@ -123,8 +124,13 @@ class _GameScreenState extends State<GameScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => _ResultDialog(
-        title: 'You Did It!',
+        title: _lives >= 3
+            ? 'Splendid!'
+            : _lives == 2
+                ? 'Impressive!'
+                : 'You Did It!',
         subtitle: 'Level ${widget.level.number} completed!',
+        pictureLevel: widget.level,
         stars: _lives,
         coins: _coinsEarned,
         primaryLabel: (inPack && next < kLevels.length) ? 'Next Level' : 'Home',
@@ -316,6 +322,7 @@ class _ResultDialog extends StatelessWidget {
     required this.onPrimary,
     this.stars,
     this.coins = 0,
+    this.pictureLevel,
   });
 
   final String title;
@@ -324,6 +331,7 @@ class _ResultDialog extends StatelessWidget {
   final VoidCallback onPrimary;
   final int? stars; // 1..3 to show a rating; null hides it
   final int coins; // coins earned this level; 0 hides the row
+  final Level? pictureLevel; // show the cleared picture when set
 
   @override
   Widget build(BuildContext context) {
@@ -336,6 +344,23 @@ class _ResultDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (pictureLevel != null) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: palette.background,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: LevelThumbnail(
+                  arrows: pictureLevel!.arrows(),
+                  rows: pictureLevel!.rows,
+                  cols: pictureLevel!.cols,
+                  color: palette.arrow,
+                  size: 180,
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
             Text(
               title,
               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
