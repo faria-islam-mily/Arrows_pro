@@ -214,7 +214,8 @@ class _GameScreenState extends State<GameScreen> {
                               Text(
                                 widget.level.difficulty == 'Daily'
                                     ? 'Daily Challenge'
-                                    : levelTitle(widget.level.number),
+                                    : levelTitle(widget.level.number,
+                                        total: kLevels.length),
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,

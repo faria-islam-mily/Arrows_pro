@@ -111,8 +111,13 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
 
         final cellW = availW / (g.cols + 2 * marginFactor);
         final cellH = availH / (g.rows + 2 * marginFactor);
-        // Cap so small early boards stay bold rather than ballooning.
-        final cell = min(min(cellW, cellH), 40.0);
+        // Clamp the cell size: capped so small boards aren't giant, and given a
+        // FLOOR so big boards keep readable, tappable arrows and deliberately
+        // overflow the screen — the player pans/pinch-zooms (down to 0.6x) to
+        // read them. That "explore a maze bigger than the screen" feel is the
+        // intended experience for the large intricate levels.
+        const minCell = 32.0;
+        final cell = min(cellW, cellH).clamp(minCell, 40.0);
         final margin = cell * marginFactor;
         final w = cell * g.cols + margin * 2;
         final h = cell * g.rows + margin * 2;

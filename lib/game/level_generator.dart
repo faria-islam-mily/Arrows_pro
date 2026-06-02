@@ -70,7 +70,12 @@ class LevelGenerator {
       arrows = _assign(snakes, rows, cols, seed * 131 + t);
     }
     arrows ??= _fallback(inMask, rows, cols);
-    arrows = _addDependencies(arrows, rows, cols);
+    // The dependency pass re-checks full solvability per candidate flip — too
+    // costly on huge boards, which are already hard from sheer arrow count. Run
+    // it only on small/medium boards.
+    if (inMask.length <= 220) {
+      arrows = _addDependencies(arrows, rows, cols);
+    }
 
     _cache[key] = arrows;
     return _fresh(arrows);

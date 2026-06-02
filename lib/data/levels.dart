@@ -1,72 +1,50 @@
 import '../game/level_generator.dart';
 import '../models/grid_arrow.dart';
 import '../models/level.dart';
-import 'shapes.dart';
+import 'intricate_shapes.dart';
 
 /// A solid rectangle mask (every cell filled with arrows).
 List<String> _filled(int rows, int cols) =>
     List.generate(rows, (_) => '#' * cols);
 
-Level _gen(int number, String difficulty, List<String> mask, {int maxLen = 8}) {
-  return Level(
-    number: number,
-    rows: mask.length,
-    cols: mask[0].length,
-    difficulty: difficulty,
-    arrows: () => LevelGenerator.fromMask(mask, seed: number, maxLen: maxLen),
-  );
+/// Board size for level [n]: grows steadily, with a bump on every 10th "boss"
+/// level, so later levels are big enough to overflow the screen (pan/zoom).
+int _sizeFor(int n) {
+  if (n <= 1) return 6; // gentle intro
+  final base = 11 + ((n - 1) ~/ 12) * 2; // +2 cells every 12 levels
+  final boss = (n % 10 == 0) ? 3 : 0;
+  return (base + boss).clamp(9, 30);
 }
-
-// ---- Difficulty + shape curve: a sawtooth in blocks of 5 --------------------
-//
-// Difficulty climbs across each block of five levels then resets, and EVERY
-// level is a different silhouette (square, diamond, heart, star, hexagon, …)
-// drawn from a size-tiered gallery. The size tier grows within a block to a big
-// picture "boss" on the 5th level, then drops back for the next block, with a
-// slow drift so deep blocks are bigger/harder than early ones. The result reads
-// as visibly growing, varied puzzles that need progressively more thinking.
-
-int _pos(int n) => (n - 1) % 5; // 0..4 within the block (4 = the picture peak)
-int _block(int n) => (n - 1) ~/ 5; // 0,1,2,... which block of five
 
 String _difficultyFor(int n) {
   if (n == 1) return 'Tutorial';
-  const ladder = ['Easy', 'Medium', 'Hard', 'Expert'];
-  const within = [0, 1, 1, 2, 2]; // Easy,Medium,Medium,Hard,Hard inside a block
-  final drift = _block(n) ~/ 2; // bump the whole block up a notch every 2 blocks
-  return ladder[(within[_pos(n)] + drift).clamp(0, ladder.length - 1)];
+  if (n <= 30) return 'Easy';
+  if (n <= 90) return 'Medium';
+  if (n <= 150) return 'Hard';
+  return 'Expert';
 }
 
-/// Size tier (0 tiny .. 3 big) for level n: grows within a block to a big peak
-/// on the 5th level, resets, and drifts up slowly over the run.
-int _tierFor(int n) {
-  const within = [1, 1, 2, 3, 3]; // small, small, medium, big, BIG peak
-  final drift = _block(n) ~/ 2;
-  return (within[_pos(n)] + drift).clamp(0, Shapes.tiers.length - 1);
-}
+/// Longer winding arrows on bigger boards.
+int _maxLenFor(int size) => (size * 0.8).round().clamp(8, 22);
 
-/// The silhouette for level n. Every level is a distinct shape; rotating the
-/// index by the tier keeps neighbouring levels from repeating a shape.
-List<String> _maskFor(int n) {
-  if (n == 1) return Shapes.tiers[0][0]; // tiny square tutorial knot
-  final t = _tierFor(n);
-  final gallery = Shapes.tiers[t];
-  return gallery[(n + t * 3) % gallery.length];
-}
+/// The mask for level [n]: a small filled square for the tutorial, otherwise a
+/// unique procedurally-generated intricate silhouette.
+List<String> _maskFor(int n) =>
+    n == 1 ? _filled(6, 6) : IntricateShapes.mask(n, _sizeFor(n));
 
-/// Longer winding arrows on bigger boards so the shape weaves densely.
-int _maxLenFor(List<String> mask) {
-  final side = mask.length > mask[0].length ? mask.length : mask[0].length;
-  return (side + 4).clamp(8, 18);
-}
-
-/// 100-level pack. Each level is seeded by its number, so generation is
-/// deterministic, and `GameController.solvable` is asserted for every one of
-/// them in the test-suite.
-final List<Level> kLevels = List<Level>.generate(100, (i) {
+/// 200-level pack. Each level is seeded by its number (deterministic), and
+/// `GameController.solvable` is asserted for every one in the test-suite.
+final List<Level> kLevels = List<Level>.generate(200, (i) {
   final n = i + 1;
   final mask = _maskFor(n);
-  return _gen(n, _difficultyFor(n), mask, maxLen: _maxLenFor(mask));
+  final maxLen = _maxLenFor(_sizeFor(n));
+  return Level(
+    number: n,
+    rows: mask.length,
+    cols: mask[0].length,
+    difficulty: _difficultyFor(n),
+    arrows: () => LevelGenerator.fromMask(mask, seed: n, maxLen: maxLen),
+  );
 });
 
 /// A once-a-day puzzle seeded by the calendar date — same for everyone that
@@ -74,12 +52,13 @@ final List<Level> kLevels = List<Level>.generate(100, (i) {
 Level dailyLevel([DateTime? when]) {
   final d = when ?? DateTime.now();
   final seed = d.year * 10000 + d.month * 100 + d.day;
+  final mask = IntricateShapes.mask(seed, 14);
   return Level(
-    number: seed, // unique per day; not part of kLevels' 1..100 numbering
-    rows: 8,
-    cols: 8,
+    number: seed, // unique per day; not part of kLevels' 1..200 numbering
+    rows: mask.length,
+    cols: mask[0].length,
     difficulty: 'Daily',
-    arrows: () => LevelGenerator.fromMask(_filled(8, 8), seed: seed, maxLen: 12),
+    arrows: () => LevelGenerator.fromMask(mask, seed: seed, maxLen: 12),
   );
 }
 

@@ -121,7 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             : const Icon(Icons.lock,
                                 size: 18, color: Colors.white),
                       ),
-                      title: Text(levelTitle(level.number)),
+                      title: Text(levelTitle(level.number, total: kLevels.length)),
                       subtitle: Text('Level ${level.number} · ${level.difficulty}'),
                       trailing: unlocked
                           ? (stars > 0
