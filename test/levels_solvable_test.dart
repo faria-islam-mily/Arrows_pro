@@ -23,6 +23,56 @@ void main() {
       }
     });
 
+    test('levels are densely woven (long arrows, few stubs)', () {
+      for (final level in kLevels) {
+        final arrows = level.arrows();
+        final cells = arrows.fold<int>(0, (n, a) => n + a.cells.length);
+        final avg = cells / arrows.length;
+        expect(avg, greaterThan(3.5),
+            reason: 'Level ${level.number} (${level.name}) avg arrow length '
+                '${avg.toStringAsFixed(1)} — too sparse');
+      }
+    });
+
+    test('levels are real puzzles (many arrows blocked at the start)', () {
+      bool canExitNow(GridArrow a, Set<Point> occ, int rows, int cols) {
+        final own = a.cells.toSet();
+        var r = a.head.y + a.dir.dRow;
+        var c = a.head.x + a.dir.dCol;
+        while (r >= 0 && r < rows && c >= 0 && c < cols) {
+          final p = Point(c, r);
+          if (!own.contains(p) && occ.contains(p)) return false;
+          r += a.dir.dRow;
+          c += a.dir.dCol;
+        }
+        return true;
+      }
+
+      for (final level in kLevels) {
+        final arrows = level.arrows();
+        final occ = <Point>{};
+        for (final a in arrows) {
+          occ.addAll(a.cells);
+        }
+        final blocked = arrows
+            .where((a) => !canExitNow(a, occ, level.rows, level.cols))
+            .length;
+        final frac = blocked / arrows.length;
+        // Difficulty ramps: harder tiers must keep very few arrows movable at
+        // once (you must trace lines to find a legal move); easy tiers just
+        // need *some* dependency so they aren't a mindless tap-fest.
+        final min = switch (level.difficulty) {
+          'Easy' => 0.10,
+          'Medium' => 0.55,
+          _ => 0.7, // Hard / Expert
+        };
+        expect(frac, greaterThan(min),
+            reason: 'Level ${level.number} (${level.name}, '
+                '${level.difficulty}) only ${(frac * 100).round()}% of arrows '
+                'are blocked at start — too easy for its tier');
+      }
+    });
+
     test('no arrow head sits on its own body', () {
       for (final level in kLevels) {
         for (final a in level.arrows()) {

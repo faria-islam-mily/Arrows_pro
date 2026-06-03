@@ -69,7 +69,12 @@ class AppState extends ChangeNotifier {
     return 1; // first visit or a broken streak → restart the cycle
   }
 
-  bool isUnlocked(int levelNumber) => levelNumber <= _unlockedLevel;
+  /// DEBUG: set true to unlock every level for testing. Flip back to false
+  /// before release.
+  static const bool debugUnlockAll = false;
+
+  bool isUnlocked(int levelNumber) =>
+      debugUnlockAll || levelNumber <= _unlockedLevel;
 
   /// Best star rating earned for [levelNumber] (0 = not yet cleared).
   int starsFor(int levelNumber) => _storage.getInt('stars_$levelNumber', 0);
@@ -86,6 +91,13 @@ class AppState extends ChangeNotifier {
   bool get dailyDoneToday => _dailyDone == _dateKey(DateTime.now());
 
   void _load() {
+    // One-time migration: the premium "Arcade" dark theme is the new default.
+    // Force it once for anyone whose saved index pointed at an old palette,
+    // then respect their choice from then on.
+    if (_storage.getInt('themeMigratedV2', 0) == 0) {
+      _storage.setInt('themeMigratedV2', 1);
+      _storage.setInt(_kTheme, 0);
+    }
     _themeIndex = _storage.getInt(_kTheme, 0);
     _unlockedLevel = _storage.getInt(_kUnlocked, 1);
     _streak = _storage.getInt(_kStreak, 0);

@@ -14,7 +14,11 @@ class GameController extends ChangeNotifier {
   final Level level;
   late List<GridArrow> _arrows;
 
+  /// Ids of arrows removed, in order — drives Undo.
+  final List<int> _history = [];
+
   List<GridArrow> get arrows => _arrows;
+  bool get canUndo => _history.isNotEmpty;
   int get rows => level.rows;
   int get cols => level.cols;
 
@@ -60,12 +64,33 @@ class GameController extends ChangeNotifier {
   bool tap(GridArrow a) {
     if (!canExit(a)) return false;
     a.removed = true;
+    _history.add(a.id);
     notifyListeners();
     return true;
   }
 
+  /// Power-up: remove an arrow even if it's currently blocked (Eraser).
+  void forceRemove(GridArrow a) {
+    if (a.removed) return;
+    a.removed = true;
+    _history.add(a.id);
+    notifyListeners();
+  }
+
+  /// Power-up: restore the most recently removed arrow (Undo). Returns it so the
+  /// caller can refresh, or null if there's nothing to undo.
+  GridArrow? undo() {
+    if (_history.isEmpty) return null;
+    final id = _history.removeLast();
+    final a = _arrows.firstWhere((x) => x.id == id);
+    a.removed = false;
+    notifyListeners();
+    return a;
+  }
+
   void reset() {
     _arrows = level.arrows();
+    _history.clear();
     notifyListeners();
   }
 

@@ -2,56 +2,46 @@ import 'dart:math';
 
 import '../models/grid_arrow.dart';
 
-/// Generates dense, gap-free, guaranteed-solvable levels of **long winding
-/// arrows** that weave into a maze, like the reference "Arrows GO" puzzles.
+/// Generates dense, gap-free, guaranteed-solvable levels of long winding arrows
+/// whose heads always point straight (with a real tail — never an abrupt
+/// sideways kink), like the reference "Arrows GO" mazes.
 ///
-/// Three stages:
+/// ## How (carve-from-the-edges)
+/// We "eat" the shape one snake at a time. Each snake's HEAD is a still-present
+/// cell whose straight corridor to the board edge is already empty (only
+/// off-board or previously-carved cells). Its BODY then winds inward through
+/// the remaining cells (space-filling), starting with a couple of straight
+/// steps so the head has a straight tail.
 ///
-/// 1. **Grow** free-form winding snakes that fill the [mask]. Each snake walks
-///    into any unused neighbour with a strong bias toward *turning*, so arrows
-///    are long (often 6-9 cells) and bend repeatedly instead of running
-///    straight. This is what makes a filled board read as a woven maze rather
-///    than a few scattered lines.
-///
-/// 2. **Orient & verify.** Each snake exits from one of its two ends (the
-///    arrowhead aligns with that end's last segment, so it always reads clean).
-///    We pick a removal order greedily: at each step take a snake whose exit ray
-///    is clear of all *other remaining* snakes. The order we find IS a valid
-///    play order, so the layout is solvable by construction. If a layout dead-
-///    ends, we regrow with a new seed (a handful of tries always succeeds; a
-///    trivial fallback guarantees we never ship a broken level).
-///
-/// 3. **Make it a puzzle.** We then flip arrows to exit from their deep end,
-///    pointing inward across the board, keeping a flip only when it leaves the
-///    arrow *blocked at the start* yet the whole board still solves greedily.
-///    Flipped arrows open up only after the ones in front of them clear — the
-///    dependency chains the genre relies on. Across the 100-level pack this
-///    drops "free at the start" from ~73% to a median of ~19%.
+/// Because a snake is carved only when its exit corridor is already clear, the
+/// carve order IS a valid play order — the level is solvable by construction.
+/// Every cell is eventually carved, so there are no gaps. The head's forward
+/// cells are never part of its own body (they were already empty), so a head
+/// is never swallowed by its own shape.
 class LevelGenerator {
-  static const _turnBias = 2; // lower = windier (2 = turn ~half the time)
-  static const _maxTries = 80; // regrow attempts before the safety fallback
-  static const _flipPasses = 6;
+  LevelGenerator._();
 
-  // Layout cache per (mask, seed, maxLen). We hand back fresh, mutable arrows
-  // each call so a finished game never leaks its `removed` flags into the next.
   static final Map<String, List<GridArrow>> _cache = {};
 
   static int _hash(int x, int y, int seed) =>
       ((x * 73856093) ^ (y * 19349663) ^ (seed * 83492791)) & 0x7fffffff;
 
-  static ArrowDir _vec(int dx, int dy) {
-    if (dx == 1) return ArrowDir.right;
-    if (dx == -1) return ArrowDir.left;
-    if (dy == 1) return ArrowDir.down;
-    return ArrowDir.up;
-  }
+  static List<GridArrow> _fresh(List<GridArrow> src) => [
+        for (final a in src)
+          GridArrow(id: a.id, cells: List<Point<int>>.of(a.cells), dir: a.dir),
+      ];
 
+  /// [hardness] (0..1) controls how much thinking a level demands: higher means
+  /// arrows exit the long way across the board (few are movable at any moment,
+  /// so you must trace lines to find a legal move). Lower keeps exits short and
+  /// obvious for gentle early levels.
   static List<GridArrow> fromMask(
     List<String> mask, {
     required int seed,
-    int maxLen = 8,
+    int maxLen = 12,
+    double hardness = 0.7,
   }) {
-    final key = '$seed|$maxLen|${mask.join("/")}';
+    final key = '$seed|$maxLen|${hardness.toStringAsFixed(2)}|${mask.join("/")}';
     final cached = _cache[key];
     if (cached != null) return _fresh(cached);
 
@@ -64,265 +54,187 @@ class LevelGenerator {
       }
     }
 
-    List<GridArrow>? arrows;
-    for (var t = 0; t < _maxTries && arrows == null; t++) {
-      final snakes = _growSnakes(inMask, seed * 131 + t, maxLen);
-      arrows = _assign(snakes, rows, cols, seed * 131 + t);
-    }
-    arrows ??= _fallback(inMask, rows, cols);
-    // The dependency pass re-checks full solvability per candidate flip — too
-    // costly on huge boards, which are already hard from sheer arrow count. Run
-    // it only on small/medium boards.
-    if (inMask.length <= 220) {
+    var arrows = _carve(inMask, rows, cols, seed, maxLen, hardness);
+    // On harder levels, also flip free arrows inward (blocked until their
+    // blockers clear) while keeping the board solvable. Skipped when easy (keep
+    // it gentle) or on huge boards (per-flip solvability check is costly).
+    if (inMask.length <= 1600 && hardness >= 0.45) {
       arrows = _addDependencies(arrows, rows, cols);
     }
-
     _cache[key] = arrows;
     return _fresh(arrows);
   }
 
-  static List<GridArrow> _fresh(List<GridArrow> src) => [
-        for (final a in src)
-          GridArrow(id: a.id, cells: List<Point<int>>.of(a.cells), dir: a.dir),
-      ];
+  static List<GridArrow> _carve(Set<Point<int>> inMask, int rows, int cols,
+      int seed, int maxLen, double hardness) {
+    final remaining = <Point<int>>{...inMask};
+    final arrows = <GridArrow>[];
+    var id = 0;
 
-  // ---- Stage 1: grow long, winding snakes that fill the mask ---------------
-
-  static List<List<Point<int>>> _growSnakes(
-      Set<Point<int>> inMask, int seed, int maxLen) {
-    final used = <Point<int>>{};
-    final startOrder = inMask.toList()
-      ..sort((a, b) => _hash(a.x, a.y, seed).compareTo(_hash(b.x, b.y, seed)));
-
-    final snakes = <List<Point<int>>>[];
-    for (final start in startOrder) {
-      if (used.contains(start)) continue;
-      final path = <Point<int>>[start];
-      used.add(start);
-      var cur = start;
-      Point<int>? last;
-
-      while (path.length < maxLen) {
-        final cands = <Point<int>>[];
-        for (final d in ArrowDir.values) {
-          final nb = Point(cur.x + d.dCol, cur.y + d.dRow);
-          // Allow tight winding (self-adjacency) so snakes grow long and fill
-          // the shape densely, like a maze — the head is kept off its own body
-          // at orientation time instead.
-          if (inMask.contains(nb) && !used.contains(nb)) cands.add(nb);
-        }
-        if (cands.isEmpty) break;
-
-        Point<int> next;
-        if (last != null) {
-          final straight = Point(cur.x + last.x, cur.y + last.y);
-          final hasStraight = cands.contains(straight);
-          final turns = cands.where((c) => c != straight).toList();
-          if (turns.isNotEmpty &&
-              (_hash(cur.x, cur.y, seed + path.length) % _turnBias != 0 ||
-                  !hasStraight)) {
-            next = turns[_hash(cur.x, cur.y, seed * 3 + path.length) %
-                turns.length];
-          } else {
-            next = hasStraight ? straight : cands.first;
-          }
-        } else {
-          next = cands[_hash(cur.x, cur.y, seed * 5) % cands.length];
-        }
-
-        last = Point(next.x - cur.x, next.y - cur.y);
-        path.add(next);
-        used.add(next);
-        cur = next;
+    // Cells of `remaining` still adjacent (in dir) to this cell.
+    int onward(Point<int> p) {
+      var n = 0;
+      for (final e in ArrowDir.values) {
+        if (remaining.contains(Point(p.x + e.dCol, p.y + e.dRow))) n++;
       }
-      snakes.add(path);
+      return n;
     }
-    return snakes;
-  }
 
-  // ---- Stage 2: choose head/order so the board is solvable ------------------
-
-  /// True if the arrowhead (head + dir) would land on the arrow's OWN body —
-  /// which makes the head look swallowed by the shape. Such orientations are
-  /// rejected everywhere a head/direction is chosen.
-  static bool _headOnBody(List<Point<int>> cells, ArrowDir d) =>
-      cells.contains(Point(cells.last.x + d.dCol, cells.last.y + d.dRow));
-
-  /// Candidate (cells, head-direction) pairs. For each end we try the natural
-  /// straight continuation FIRST (so heads point along the body), then the
-  /// perpendicular turns only as a fallback — and skip any direction whose
-  /// forward cell is the snake's own body, so the head is never obscured even
-  /// though the snake may wind tightly against itself.
-  static List<({List<Point<int>> cells, ArrowDir dir})> _orientations(
-      List<Point<int>> cells) {
-    final ends =
-        cells.length == 1 ? [cells] : [cells, cells.reversed.toList()];
-    final out = <({List<Point<int>> cells, ArrowDir dir})>[];
-    for (final oriented in ends) {
-      final own = oriented.toSet();
-      final head = oriented.last;
-      final dirs = <ArrowDir>[];
-      if (oriented.length >= 2) {
-        final prev = oriented[oriented.length - 2];
-        dirs.add(_vec(head.x - prev.x, head.y - prev.y)); // straight first
+    // The straight corridor from the head out to the edge is free of remaining
+    // cells (so it's already been carved / is off-board → clear at play time).
+    bool corridorClear(Point<int> h, ArrowDir d) {
+      var r = h.y + d.dRow;
+      var c = h.x + d.dCol;
+      while (r >= 0 && r < rows && c >= 0 && c < cols) {
+        if (remaining.contains(Point(c, r))) return false;
+        r += d.dRow;
+        c += d.dCol;
       }
-      for (final d in ArrowDir.values) {
-        if (!dirs.contains(d)) dirs.add(d);
-      }
-      for (final d in dirs) {
-        if (own.contains(Point(head.x + d.dCol, head.y + d.dRow))) continue;
-        out.add((cells: oriented, dir: d));
-      }
+      return true;
     }
-    return out;
-  }
 
-  static bool _rayClear(List<Point<int>> cells, ArrowDir d,
-      Set<Point<int>> blockers, int rows, int cols) {
-    final own = cells.toSet();
-    final head = cells.last;
-    var r = head.y + d.dRow;
-    var c = head.x + d.dCol;
-    while (r >= 0 && r < rows && c >= 0 && c < cols) {
-      final p = Point(c, r);
-      if (!own.contains(p) && blockers.contains(p)) return false;
-      r += d.dRow;
-      c += d.dCol;
-    }
-    return true;
-  }
-
-  static List<GridArrow>? _assign(
-      List<List<Point<int>>> snakes, int rows, int cols, int seed) {
-    final remaining = <int>{for (var i = 0; i < snakes.length; i++) i};
-    final cellsOf = [for (final s in snakes) s.toSet()];
-    final chosen = <int, ({List<Point<int>> cells, ArrowDir dir})>{};
+    int exitDist(Point<int> p, ArrowDir d) => switch (d) {
+          ArrowDir.up => p.y,
+          ArrowDir.down => rows - 1 - p.y,
+          ArrowDir.left => p.x,
+          ArrowDir.right => cols - 1 - p.x,
+        };
+    final maxDim = rows > cols ? rows : cols;
 
     while (remaining.isNotEmpty) {
-      var progressed = false;
-      final ord = remaining.toList()
-        ..sort((a, b) => _hash(snakes[a][0].x, snakes[a][0].y, seed + a)
-            .compareTo(_hash(snakes[b][0].x, snakes[b][0].y, seed + b)));
-      for (final i in ord) {
-        final blockers = <Point<int>>{};
-        for (final j in remaining) {
-          if (j != i) blockers.addAll(cellsOf[j]);
-        }
-        for (final o in _orientations(snakes[i])) {
-          if (_headOnBody(o.cells, o.dir)) continue; // never obscure the head
-          if (_rayClear(o.cells, o.dir, blockers, rows, cols)) {
-            chosen[i] = o;
-            remaining.remove(i);
-            progressed = true;
-            break;
+      // Pick the next head: a cell with a clear exit corridor. Prefer one whose
+      // tail cell (straight behind it) is still present so the head gets a
+      // straight tail, then prefer the LONGEST clear exit — i.e. shoot across
+      // the already-carved region. At the start of play that whole corridor is
+      // still full of other arrows, so the arrow is blocked and the player must
+      // trace a long line to realise it. That's what makes it a real puzzle.
+      Point<int>? bestH;
+      ArrowDir? bestD;
+      var bestKey = 1 << 30;
+      for (final cell in remaining) {
+        for (final d in ArrowDir.values) {
+          if (!corridorClear(cell, d)) continue;
+          final hasTail =
+              remaining.contains(Point(cell.x - d.dCol, cell.y - d.dRow));
+          final ed = exitDist(cell, d);
+          // Blend: hardness→1 prefers the LONGEST clear corridor (hard to
+          // trace), hardness→0 prefers the shortest (obvious, gentle).
+          final corridor = (maxDim - ed) * hardness + ed * (1 - hardness);
+          final key = (hasTail ? 0 : 100000) +
+              (corridor * 8).round() +
+              (_hash(cell.x, cell.y, seed) & 7);
+          if (key < bestKey) {
+            bestKey = key;
+            bestH = cell;
+            bestD = d;
           }
         }
-        if (progressed) break;
       }
-      if (!progressed) return null; // dead-end: caller regrows with a new seed
-    }
 
-    var id = 0;
-    return [
-      for (var i = 0; i < snakes.length; i++)
-        GridArrow(
-            id: id++, cells: List<Point<int>>.of(chosen[i]!.cells), dir: chosen[i]!.dir),
-    ];
-  }
+      final h = bestH!;
+      final d = bestD!;
+      final back = Point<int>(-d.dCol, -d.dRow);
 
-  /// Never-broken safety net: one arrow per cell pointing at its nearest edge.
-  /// Always solvable (the board peels from the outside in).
-  static List<GridArrow> _fallback(
-      Set<Point<int>> inMask, int rows, int cols) {
-    var id = 0;
-    return [
-      for (final p in inMask)
-        GridArrow(id: id++, cells: [p], dir: _towardNearestEdge(p, rows, cols)),
-    ];
-  }
-
-  // ---- Stage 3: flip arrows inward to build dependency chains ---------------
-
-  static List<GridArrow> _addDependencies(
-      List<GridArrow> arrows, int rows, int cols) {
-    for (var pass = 0; pass < _flipPasses; pass++) {
-      var changed = false;
-      for (var i = 0; i < arrows.length; i++) {
-        final cur = arrows[i];
-        if (cur.cells.length < 2) continue;
-        if (_blockedAtStart(arrows, i, rows, cols)) continue; // already a link
-        final trial = List<GridArrow>.of(arrows)..[i] = _flip(cur);
-        if (!_headOnBody(trial[i].cells, trial[i].dir) &&
-            _blockedAtStart(trial, i, rows, cols) &&
-            _solvable(trial, rows, cols)) {
-          arrows = trial;
-          changed = true;
+      final body = <Point<int>>[h];
+      remaining.remove(h);
+      var cur = h;
+      var steps = 0;
+      while (body.length < maxLen) {
+        Point<int>? next;
+        // First two steps go straight back, giving the head a straight tail.
+        if (steps < 2) {
+          final s = Point(cur.x + back.x, cur.y + back.y);
+          if (remaining.contains(s)) {
+            next = s;
+          } else if (steps == 0) {
+            break; // can't form a straight tail → keep it a clean 1-cell arrow
+          }
         }
+        if (next == null) {
+          // Warnsdorff: wind into the neighbour with the fewest onward exits.
+          final cands = <Point<int>>[];
+          for (final e in ArrowDir.values) {
+            final p = Point(cur.x + e.dCol, cur.y + e.dRow);
+            if (remaining.contains(p)) cands.add(p);
+          }
+          if (cands.isEmpty) break;
+          cands.sort((a, b) {
+            final byDeg = onward(a) - onward(b);
+            if (byDeg != 0) return byDeg;
+            return _hash(a.x, a.y, seed) - _hash(b.x, b.y, seed);
+          });
+          next = cands.first;
+        }
+        remaining.remove(next);
+        body.add(next);
+        cur = next;
+        steps++;
       }
-      if (!changed) break;
+
+      // body is head-first; reverse to tail..head so the head is last.
+      arrows.add(GridArrow(id: id++, cells: body.reversed.toList(), dir: d));
     }
     return arrows;
   }
 
-  static GridArrow _flip(GridArrow a) {
-    final cells = a.cells.reversed.toList();
-    var nd = a.dir;
-    if (cells.length >= 2) {
-      final hd = cells.last;
-      final pv = cells[cells.length - 2];
-      nd = _vec(hd.x - pv.x, hd.y - pv.y);
-    }
-    return GridArrow(id: a.id, cells: cells, dir: nd);
+  static ArrowDir _vec(int dx, int dy) {
+    if (dx > 0) return ArrowDir.right;
+    if (dx < 0) return ArrowDir.left;
+    if (dy > 0) return ArrowDir.down;
+    return ArrowDir.up;
   }
 
-  static bool _blockedAtStart(
-      List<GridArrow> arrows, int idx, int rows, int cols) {
-    final occ = <Point<int>>{};
-    for (final a in arrows) {
-      occ.addAll(a.cells);
+  /// Reverse a snake so it points the OTHER way. Returns null if that would
+  /// kink the head (no straight tail) or bury the head in its own body — so
+  /// flipped arrows keep the same clean, straight heads as carved ones.
+  static GridArrow? _flip(GridArrow a) {
+    if (a.cells.length < 3) return null;
+    final rev = a.cells.reversed.toList();
+    final head = rev.last;
+    final dx = head.x - rev[rev.length - 2].x;
+    final dy = head.y - rev[rev.length - 2].y;
+    if (rev.contains(Point(head.x + dx, head.y + dy))) return null; // on body
+    var run = 1;
+    for (var j = rev.length - 1; j >= 1; j--) {
+      if (rev[j].x - rev[j - 1].x == dx && rev[j].y - rev[j - 1].y == dy) {
+        run++;
+      } else {
+        break;
+      }
     }
-    final a = arrows[idx];
+    if (run < 2) return null; // would kink right at the head
+    return GridArrow(id: a.id, cells: rev, dir: _vec(dx, dy));
+  }
+
+  /// Can this arrow slide straight off the board through the current occupancy
+  /// (its own cells don't block it)?
+  static bool _canExit(
+      GridArrow a, Set<Point<int>> occ, int rows, int cols) {
     final own = a.cells.toSet();
     var r = a.head.y + a.dir.dRow;
     var c = a.head.x + a.dir.dCol;
     while (r >= 0 && r < rows && c >= 0 && c < cols) {
       final p = Point(c, r);
-      if (!own.contains(p) && occ.contains(p)) return true;
+      if (!own.contains(p) && occ.contains(p)) return false;
       r += a.dir.dRow;
       c += a.dir.dCol;
     }
-    return false;
+    return true;
   }
 
-  /// Greedy solvability check over a plain arrow list (mirrors GameController).
+  /// Greedy peel: removable as long as some present arrow has a clear exit.
   static bool _solvable(List<GridArrow> arrows, int rows, int cols) {
-    final removed = List<bool>.filled(arrows.length, false);
-    final owns = [for (final a in arrows) a.cells.toSet()];
-    var rem = arrows.length;
-    while (rem > 0) {
+    final removed = <int>{};
+    while (removed.length < arrows.length) {
       final occ = <Point<int>>{};
-      for (var i = 0; i < arrows.length; i++) {
-        if (!removed[i]) occ.addAll(arrows[i].cells);
+      for (final a in arrows) {
+        if (!removed.contains(a.id)) occ.addAll(a.cells);
       }
       var progressed = false;
-      for (var i = 0; i < arrows.length; i++) {
-        if (removed[i]) continue;
-        final a = arrows[i];
-        var r = a.head.y + a.dir.dRow;
-        var c = a.head.x + a.dir.dCol;
-        var ok = true;
-        while (r >= 0 && r < rows && c >= 0 && c < cols) {
-          final p = Point(c, r);
-          if (!owns[i].contains(p) && occ.contains(p)) {
-            ok = false;
-            break;
-          }
-          r += a.dir.dRow;
-          c += a.dir.dCol;
-        }
-        if (ok) {
-          removed[i] = true;
-          rem--;
+      for (final a in arrows) {
+        if (removed.contains(a.id)) continue;
+        if (_canExit(a, occ, rows, cols)) {
+          removed.add(a.id);
           progressed = true;
           break;
         }
@@ -332,13 +244,36 @@ class LevelGenerator {
     return true;
   }
 
-  static ArrowDir _towardNearestEdge(Point<int> p, int rows, int cols) {
-    final dists = <ArrowDir, int>{
-      ArrowDir.up: p.y,
-      ArrowDir.down: rows - 1 - p.y,
-      ArrowDir.left: p.x,
-      ArrowDir.right: cols - 1 - p.x,
-    };
-    return dists.entries.reduce((a, b) => a.value <= b.value ? a : b).key;
+  static bool _blockedAtStart(
+      List<GridArrow> arrows, int idx, int rows, int cols) {
+    final occ = <Point<int>>{};
+    for (final a in arrows) {
+      occ.addAll(a.cells);
+    }
+    return !_canExit(arrows[idx], occ, rows, cols);
+  }
+
+  /// Turn the trivial outside-in peel into a real puzzle: repeatedly flip a
+  /// free arrow so it points inward (blocked until its blockers move), keeping
+  /// the move only if the whole board still solves. The result is densely
+  /// inter-dependent yet always solvable.
+  static List<GridArrow> _addDependencies(
+      List<GridArrow> arrows, int rows, int cols) {
+    for (var pass = 0; pass < 5; pass++) {
+      var changed = false;
+      for (var i = 0; i < arrows.length; i++) {
+        if (_blockedAtStart(arrows, i, rows, cols)) continue; // already a dep
+        final flipped = _flip(arrows[i]);
+        if (flipped == null) continue;
+        final trial = List<GridArrow>.of(arrows)..[i] = flipped;
+        if (_blockedAtStart(trial, i, rows, cols) &&
+            _solvable(trial, rows, cols)) {
+          arrows = trial;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    return arrows;
   }
 }

@@ -6,21 +6,24 @@ import '../state/app_scope.dart';
 /// Bottom sheet with Sound / Vibration / Music toggles, plus an optional
 /// Restart action (pass [onRestart] from the game screen). Mirrors the look of
 /// the theme picker.
-Future<void> showSettingsSheet(BuildContext context, {VoidCallback? onRestart}) {
+Future<void> showSettingsSheet(BuildContext context,
+    {VoidCallback? onRestart, VoidCallback? onHowToPlay}) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: context.palette.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (sheetContext) => _SettingsBody(onRestart: onRestart),
+    builder: (sheetContext) =>
+        _SettingsBody(onRestart: onRestart, onHowToPlay: onHowToPlay),
   );
 }
 
 class _SettingsBody extends StatelessWidget {
-  const _SettingsBody({this.onRestart});
+  const _SettingsBody({this.onRestart, this.onHowToPlay});
 
   final VoidCallback? onRestart;
+  final VoidCallback? onHowToPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +67,17 @@ class _SettingsBody extends StatelessWidget {
                 AudioService.instance.setMusicEnabled(v);
               },
             ),
+            if (onHowToPlay != null) ...[
+              const SizedBox(height: 8),
+              _ActionTile(
+                icon: Icons.touch_app_outlined,
+                label: 'How to play',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onHowToPlay!();
+                },
+              ),
+            ],
             if (onRestart != null) ...[
               const SizedBox(height: 16),
               SizedBox(
@@ -78,6 +92,48 @@ class _SettingsBody extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Material(
+      color: palette.background,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: palette.primary),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style:
+                      const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: palette.textMuted),
+            ],
+          ),
         ),
       ),
     );

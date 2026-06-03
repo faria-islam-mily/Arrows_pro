@@ -7,6 +7,14 @@ import '../game/game_controller.dart';
 import '../models/grid_arrow.dart';
 import '../state/app_scope.dart';
 
+/// A handle the bottom power-up bar uses to drive the board (the board owns the
+/// exit animations, so power-ups route through it). BoardView fills these in.
+class BoardActions {
+  VoidCallback? armEraser;
+  VoidCallback? undo;
+  VoidCallback? autoStep;
+}
+
 /// Renders the arrow board with thick rounded strokes + solid arrowheads,
 /// handles taps (hit-testing cells), and slides arrows off-board when escaping.
 class BoardView extends StatefulWidget {
@@ -15,11 +23,19 @@ class BoardView extends StatefulWidget {
     required this.game,
     required this.hintId,
     required this.onBlocked,
+    this.actions,
+    this.onEraserUsed,
   });
 
   final GameController game;
   final int? hintId;
   final VoidCallback onBlocked;
+
+  /// Optional handle the power-up bar uses to trigger board actions.
+  final BoardActions? actions;
+
+  /// Called when an armed Eraser is actually spent on an arrow.
+  final VoidCallback? onEraserUsed;
 
   @override
   State<BoardView> createState() => _BoardViewState();
@@ -37,10 +53,54 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
 
   int? _blockedId; // arrow flashing red after a blocked tap
   Timer? _blockTimer;
+  bool _eraserArmed = false; // next tapped arrow is erased even if blocked
+
+  @override
+  void initState() {
+    super.initState();
+    _bindActions();
+  }
+
+  @override
+  void didUpdateWidget(BoardView old) {
+    super.didUpdateWidget(old);
+    if (old.actions != widget.actions) _bindActions();
+  }
+
+  void _bindActions() {
+    final act = widget.actions;
+    if (act == null) return;
+    act.armEraser = () => setState(() => _eraserArmed = true);
+    act.undo = _undo;
+    act.autoStep = _autoStep;
+  }
+
+  /// Restore the last removed arrow (Undo power-up).
+  void _undo() {
+    widget.game.undo();
+    setState(() {});
+  }
+
+  /// Slide out one currently-movable arrow, exactly like a tap (Magic power-up).
+  void _autoStep() {
+    final id = widget.game.hintArrowId();
+    if (id == null) return;
+    final a = widget.game.arrows.firstWhere((x) => x.id == id);
+    widget.game.tap(a);
+    _startExit(a);
+  }
 
   void _handleTapCell(int row, int col) {
     final a = widget.game.arrowAt(row, col);
     if (a == null) return;
+    if (_eraserArmed) {
+      // Eraser: remove this arrow even if it's blocked, then disarm + bill it.
+      setState(() => _eraserArmed = false);
+      widget.game.forceRemove(a);
+      _startExit(a);
+      widget.onEraserUsed?.call();
+      return;
+    }
     if (widget.game.canExit(a)) {
       widget.game.tap(a); // marks removed + notifies (progress/win)
       _startExit(a);
@@ -140,7 +200,8 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
           panEnabled: true,
           // Natural size so the board can be dragged freely anywhere on screen.
           constrained: false,
-          minScale: 0.6,
+          // Allow zooming far out so even the biggest boards fit fully on screen.
+          minScale: 0.25,
           maxScale: 5,
           boundaryMargin: const EdgeInsets.all(double.infinity),
           child: GestureDetector(
@@ -162,6 +223,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
                 blockedId: _blockedId,
                 color: palette.arrow,
                 hintColor: palette.arrowActive,
+                dotColor: palette.textMuted,
                 exitingArrows: _exitingArrows,
                 exitProgress: _exitProgress,
               ),
@@ -182,6 +244,7 @@ class _BoardPainter extends CustomPainter {
     required this.blockedId,
     required this.color,
     required this.hintColor,
+    required this.dotColor,
     required this.exitingArrows,
     required this.exitProgress,
   });
@@ -195,6 +258,7 @@ class _BoardPainter extends CustomPainter {
   final int? blockedId;
   final Color color;
   final Color hintColor;
+  final Color dotColor;
   final Map<int, GridArrow> exitingArrows;
   final Map<int, double> exitProgress;
 
@@ -316,6 +380,22 @@ class _BoardPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Faint dot grid: a dot marks every board cell, revealed wherever an arrow
+    // has slid away (occupied cells are covered by their arrow). This is the
+    // satisfying "trail of dots" that appears as you clear the board.
+    final occupied = <Point<int>>{};
+    final allCells = <Point<int>>{};
+    for (final a in game.arrows) {
+      allCells.addAll(a.cells);
+      if (!a.removed) occupied.addAll(a.cells);
+    }
+    final dotPaint = Paint()..color = dotColor.withValues(alpha: 0.30);
+    final dotR = cell * 0.06;
+    for (final c in allCells) {
+      if (occupied.contains(c)) continue;
+      canvas.drawCircle(_center(c), dotR, dotPaint);
+    }
+
     // Active arrows: all shafts first, then all heads, so no arrow's body is
     // ever painted over another arrow's head.
     final draws = <(GridArrow, Color)>[];

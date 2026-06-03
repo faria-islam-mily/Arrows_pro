@@ -25,8 +25,20 @@ class AppPalette {
   final Color textMuted;
 }
 
-/// Selectable themes, including an eye-friendly (dark) option.
+/// Selectable themes. The default (index 0) is the premium arcade look:
+/// dark navy board, vivid coral arrows, gold accents.
 const List<AppPalette> kPalettes = [
+  AppPalette(
+    name: 'Arcade',
+    brightness: Brightness.dark,
+    background: Color(0xFF191D2C),
+    surface: Color(0xFF2A3145),
+    primary: Color(0xFF4E5DF2), // indigo buttons
+    accent: Color(0xFFFFC83D), // gold (stars, streak)
+    arrow: Color(0xFFEE4B4B), // vivid coral-red
+    arrowActive: Color(0xFFFFD23F), // gold hint highlight
+    textMuted: Color(0xFF8A93A8),
+  ),
   AppPalette(
     name: 'Mint',
     brightness: Brightness.light,

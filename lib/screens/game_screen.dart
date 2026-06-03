@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../data/level_titles.dart';
 import '../data/levels.dart';
 import '../game/game_controller.dart';
 import '../models/level.dart';
@@ -24,6 +23,7 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   late GameController _game;
   FeedbackService? _feedback;
+  final BoardActions _boardActions = BoardActions();
 
   int _lives = 3;
   int? _hintId;
@@ -46,10 +46,13 @@ class _GameScreenState extends State<GameScreen> {
     // Read app state once dependencies are available.
     final state = AppScope.read(context);
     _feedback ??= FeedbackService(state);
-    if (!state.tutorialSeen && !_showTutorial) {
+    // First-run coach: only on Level 1, the natural first puzzle.
+    if (!state.tutorialSeen && !_showTutorial && widget.level.number == 1) {
       _showTutorial = true;
     }
   }
+
+  void _replayTutorial() => setState(() => _showTutorial = true);
 
   void _onChange() {
     // A successful tap reduces the remaining count; play the success feel.
@@ -99,6 +102,68 @@ class _GameScreenState extends State<GameScreen> {
     }
     _feedback?.tick();
     setState(() => _hintId = _game.hintArrowId());
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ));
+  }
+
+  // Eraser: arm the board so the next tapped arrow is removed even if blocked.
+  // We only bill the 40 coins once it's actually spent on an arrow.
+  static const _eraserCost = 40;
+  static const _magicCost = 25;
+  static const _undoCost = 20;
+
+  Future<void> _useEraser() async {
+    final state = AppScope.read(context);
+    if (state.coins < _eraserCost) {
+      _toast('Need $_eraserCost coins for the Eraser');
+      return;
+    }
+    _boardActions.armEraser?.call();
+    _feedback?.tick();
+    _toast('Tap any arrow to erase it');
+  }
+
+  void _onEraserUsed() {
+    AppScope.read(context).spendCoins(_eraserCost);
+  }
+
+  // Magic: instantly slide out one currently-movable arrow.
+  Future<void> _useMagic() async {
+    if (_game.hintArrowId() == null) {
+      _toast('No movable arrow right now');
+      return;
+    }
+    final state = AppScope.read(context);
+    if (!await state.spendCoins(_magicCost)) {
+      _toast('Need $_magicCost coins for Magic');
+      return;
+    }
+    _boardActions.autoStep?.call();
+    _feedback?.tick();
+  }
+
+  // Undo: restore the last removed arrow.
+  Future<void> _useUndo() async {
+    if (!_game.canUndo) {
+      _toast('Nothing to undo');
+      return;
+    }
+    final state = AppScope.read(context);
+    if (!await state.spendCoins(_undoCost)) {
+      _toast('Need $_undoCost coins to Undo');
+      return;
+    }
+    _boardActions.undo?.call();
+    _feedback?.tick();
   }
 
   void _restart() {
@@ -178,6 +243,7 @@ class _GameScreenState extends State<GameScreen> {
     final palette = context.palette;
     final progress = _game.progress;
     final hints = context.appState.hints;
+    final coins = context.appState.coins;
 
     return Scaffold(
       backgroundColor: palette.background,
@@ -189,6 +255,8 @@ class _GameScreenState extends State<GameScreen> {
               game: _game,
               hintId: _hintId,
               onBlocked: _onBlocked,
+              actions: _boardActions,
+              onEraserUsed: _onEraserUsed,
             ),
           ),
 
@@ -197,8 +265,19 @@ class _GameScreenState extends State<GameScreen> {
             child: Align(
               alignment: Alignment.topCenter,
               child: Container(
-                color: palette.background.withValues(alpha: 0.92),
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
+                margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 12),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.28),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -209,38 +288,30 @@ class _GameScreenState extends State<GameScreen> {
                           icon: Icon(Icons.arrow_back, color: palette.arrow),
                         ),
                         Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                widget.level.name.isNotEmpty
-                                    ? widget.level.name
-                                    : levelTitle(widget.level.number,
-                                        total: kLevels.length),
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.primary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 20,
-                                ),
+                          child: Center(
+                            child: Text(
+                              widget.level.difficulty == 'Daily'
+                                  ? 'Daily'
+                                  : 'LVL ${widget.level.number}',
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.primary,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 22,
                               ),
-                              Text(
-                                'Level ${widget.level.number} · '
-                                '${widget.level.difficulty}',
-                                style: TextStyle(
-                                  color: palette.accent,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
+                        _CoinChip(coins: coins),
                         IconButton(
                           tooltip: 'Settings',
-                          onPressed: () =>
-                              showSettingsSheet(context, onRestart: _restart),
+                          onPressed: () => showSettingsSheet(
+                            context,
+                            onRestart: _restart,
+                            onHowToPlay: _replayTutorial,
+                          ),
                           icon: Icon(Icons.settings_outlined,
                               color: palette.arrow),
                         ),
@@ -286,19 +357,56 @@ class _GameScreenState extends State<GameScreen> {
             ),
           ),
 
-          // Hint button overlay (bottom).
+          // Bottom power-up bar — four grounded square cards.
           Positioned(
-            left: 20,
-            right: 20,
+            left: 0,
+            right: 0,
             bottom: 0,
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: FilledButton.icon(
-                  onPressed: _useHint,
-                  icon: const Icon(Icons.lightbulb_outline),
-                  label: Text(hints > 0 ? 'Hint · $hints' : 'Hint · 30 coins'),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _PowerButton(
+                        icon: Icons.lightbulb_rounded,
+                        colors: const [Color(0xFFFFC83D), Color(0xFFF4A100)],
+                        count: hints > 0 ? hints : null,
+                        coinCost: hints > 0 ? null : 30,
+                        plus: true,
+                        onTap: _useHint,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _PowerButton(
+                        icon: Icons.cleaning_services_rounded,
+                        colors: const [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
+                        coinCost: _eraserCost,
+                        onTap: _useEraser,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _PowerButton(
+                        icon: Icons.auto_awesome_rounded,
+                        colors: const [Color(0xFF8E8EF6), Color(0xFF4E5DF2)],
+                        coinCost: _magicCost,
+                        onTap: _useMagic,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _PowerButton(
+                        icon: Icons.undo_rounded,
+                        colors: const [Color(0xFF36C58E), Color(0xFF1E9E8A)],
+                        coinCost: _undoCost,
+                        enabled: _game.canUndo,
+                        onTap: _useUndo,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -412,6 +520,169 @@ class _ResultDialog extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One colorful power-up tile for the bottom bar: a vibrant gradient card (so
+/// it pops on every theme, light or dark), a white icon, a cost/count chip, and
+/// an optional green "+" badge (Hint). Disabled tiles desaturate + dim.
+class _PowerButton extends StatelessWidget {
+  const _PowerButton({
+    required this.icon,
+    required this.onTap,
+    required this.colors,
+    this.coinCost,
+    this.count,
+    this.plus = false,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final List<Color> colors;
+  final int? coinCost;
+  final int? count;
+  final bool plus;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final grad = enabled
+        ? colors
+        : const [Color(0xFF6B7280), Color(0xFF4B5563)]; // grey when disabled
+
+    // Info chip: a count (free uses) takes priority, else the coin cost.
+    Widget? chip;
+    if (count != null) {
+      chip = _chip(child: Text('x$count', style: _chipText));
+    } else if (coinCost != null) {
+      chip = _chip(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.monetization_on, size: 11, color: Color(0xFFFFD23F)),
+            const SizedBox(width: 3),
+            Text('$coinCost', style: _chipText),
+          ],
+        ),
+      );
+    }
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Container(
+        height: 66,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: grad,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: grad.last.withValues(alpha: 0.45),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: enabled ? onTap : null,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 26, color: Colors.white),
+                        if (chip != null) ...[
+                          const SizedBox(height: 5),
+                          chip,
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (plus && enabled)
+              Positioned(
+                top: -5,
+                right: -5,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2BB673),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: const Icon(Icons.add, size: 13, color: Colors.white),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const _chipText = TextStyle(
+    fontSize: 12,
+    height: 1,
+    fontWeight: FontWeight.w800,
+    color: Colors.white,
+  );
+
+  Widget _chip({required Widget child}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: child,
+      );
+}
+
+/// Live coin balance pill for the header. Rebuilds (and so visibly ticks down)
+/// whenever coins are spent, since the screen subscribes to app state.
+class _CoinChip extends StatelessWidget {
+  const _CoinChip({required this.coins});
+
+  final int coins;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.monetization_on, size: 18, color: Color(0xFFF4B400)),
+          const SizedBox(width: 5),
+          Text(
+            '$coins',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              color: palette.arrow,
+            ),
+          ),
+        ],
       ),
     );
   }
