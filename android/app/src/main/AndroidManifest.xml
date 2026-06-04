@@ -4,7 +4,7 @@
     <!-- Google Play Billing for in-app purchases. -->
     <uses-permission android:name="com.android.vending.BILLING"/>
     <application
-        android:label="arrow_pro"
+        android:label="Arrow Pro"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- AdMob app ID. This is Google's official SAMPLE app ID — replace it
