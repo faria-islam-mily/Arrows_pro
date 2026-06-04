@@ -8,11 +8,18 @@ import '../theme/game_colors.dart';
 /// the file isn't present yet. This lets us reference art paths before the
 /// real files have been dropped into `assets/images/` without crashing.
 class AppImage extends StatelessWidget {
-  const AppImage(this.asset, {super.key, required this.size, this.fallback});
+  const AppImage(
+    this.asset, {
+    super.key,
+    required this.size,
+    this.fallback,
+    this.fit = BoxFit.contain,
+  });
 
   final String asset;
   final double size;
   final Widget? fallback;
+  final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +30,7 @@ class AppImage extends StatelessWidget {
       asset,
       width: size,
       height: size,
-      fit: BoxFit.contain,
+      fit: fit,
       filterQuality: FilterQuality.medium,
       cacheWidth: (size * 3).round(),
       errorBuilder: (_, __, ___) =>

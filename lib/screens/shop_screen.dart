@@ -399,10 +399,10 @@ class _NoAdsCard extends StatelessWidget {
         children: [
           const AppImage(
             AppImages.noAds,
-            size: 56,
+            size: 66,
             fallback: Icon(Icons.block_rounded, color: GameColors.red, size: 40),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

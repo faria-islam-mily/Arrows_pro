@@ -35,6 +35,10 @@ class AppState extends ChangeNotifier {
   static const _kInfinite = 'infiniteUntilMs';
   static const _kStarsTotal = 'starsTotal';
   static const _kPiggy = 'piggyCoins';
+  static const _kUsername = 'username';
+  static const _kAvatar = 'avatarIndex';
+  static const _kFrame = 'frameIndex';
+  static const _kProfileDone = 'profileDone';
 
   int _themeIndex = 0;
   int _unlockedLevel = 1; // highest level number the player may open
@@ -75,6 +79,12 @@ class AppState extends ChangeNotifier {
   static const int kPiggyPerLevel = 50; // coins added per level cleared
   int _piggyCoins = 0;
 
+  // ---- Player profile ----
+  String? _username;
+  int _avatarIndex = 0;
+  int _frameIndex = 0;
+  bool _profileDone = false; // shown the first-run name/avatar flow yet?
+
   /// The level at which each power is introduced (gradual rollout).
   static const Map<PowerUp, int> _unlockLevel = {
     PowerUp.hint: 4,
@@ -114,6 +124,38 @@ class AppState extends ChangeNotifier {
   int get starTotal => _starsTotal;
   int get piggyCoins => _piggyCoins;
   bool get canBreakPiggy => _piggyCoins >= kPiggyBreakMin;
+
+  // ---- Profile ----
+  String get username => (_username?.isNotEmpty ?? false) ? _username! : 'Player';
+  bool get hasUsername => _username != null && _username!.trim().isNotEmpty;
+  int get avatarIndex => _avatarIndex;
+  int get frameIndex => _frameIndex;
+  bool get profileDone => _profileDone;
+
+  Future<void> setUsername(String name) async {
+    _username = name.trim();
+    notifyListeners();
+    await _storage.setString(_kUsername, _username!);
+  }
+
+  Future<void> setAvatar(int index) async {
+    _avatarIndex = index;
+    notifyListeners();
+    await _storage.setInt(_kAvatar, index);
+  }
+
+  Future<void> setFrame(int index) async {
+    _frameIndex = index;
+    notifyListeners();
+    await _storage.setInt(_kFrame, index);
+  }
+
+  Future<void> markProfileDone() async {
+    if (_profileDone) return;
+    _profileDone = true;
+    notifyListeners();
+    await _storage.setBool(_kProfileDone, true);
+  }
 
   /// Add coins to the piggy bank (capped).
   Future<void> addToPiggy(int n) async {
@@ -347,6 +389,10 @@ class AppState extends ChangeNotifier {
     _nextLifeMs = _storage.getInt(_kNextLife, 0);
     _infiniteUntilMs = _storage.getInt(_kInfinite, 0);
     _piggyCoins = _storage.getInt(_kPiggy, 0);
+    _username = _storage.getString(_kUsername);
+    _avatarIndex = _storage.getInt(_kAvatar, 0);
+    _frameIndex = _storage.getInt(_kFrame, 0);
+    _profileDone = _storage.getBool(_kProfileDone, false);
     // Star total is cached; on first run (or upgrade) seed it by summing once.
     _starsTotal = _storage.getInt(_kStarsTotal, -1);
     if (_starsTotal < 0) {

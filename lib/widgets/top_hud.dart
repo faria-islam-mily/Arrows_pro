@@ -4,9 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../state/app_scope.dart';
-import '../theme/app_images.dart';
 import '../theme/game_colors.dart';
 import 'app_image.dart';
+import 'profile_dialogs.dart';
 
 /// The top resource bar: avatar, coins (with a "+" on the coin), lives (number
 /// inside the heart + regen timer), star total, and a settings gear. Big 3D
@@ -76,7 +76,15 @@ class _TopHudState extends State<TopHud> {
       padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
       child: Row(
         children: [
-          _Avatar(onTap: widget.onProfile),
+          GestureDetector(
+            onTap: widget.onProfile,
+            child: AvatarBadge(
+              avatarIndex: state.avatarIndex,
+              frameIndex: state.frameIndex,
+              size: 48,
+              showDot: true,
+            ),
+          ),
           const SizedBox(width: 5),
           // Coins: big coin with a "+" on it, count beside it.
           Expanded(
@@ -145,9 +153,9 @@ class _HudPill extends StatelessWidget {
           border: Border.all(color: GameColors.hudPillBorder, width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
@@ -302,62 +310,6 @@ class _BumpTextState extends State<_BumpText>
         return Transform.scale(scale: s, child: child);
       },
       child: Text(widget.text, style: widget.style),
-    );
-  }
-}
-
-class _Avatar extends StatelessWidget {
-  const _Avatar({this.onTap});
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              gradient: const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFFFFE082), Color(0xFFFFC02E)],
-              ),
-              border: Border.all(color: Colors.white, width: 2.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: const AppImage(
-              AppImages.avatarPlayer,
-              size: 42,
-              fallback: Text('🐹', style: TextStyle(fontSize: 24)),
-            ),
-          ),
-          Positioned(
-            top: -3,
-            right: -3,
-            child: Container(
-              width: 13,
-              height: 13,
-              decoration: BoxDecoration(
-                color: GameColors.red,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

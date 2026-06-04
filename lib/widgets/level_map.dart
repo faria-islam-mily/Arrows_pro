@@ -40,7 +40,6 @@ class HomeMap extends StatefulWidget {
 class _HomeMapState extends State<HomeMap> {
   final ScrollController _controller = ScrollController();
   bool _didCenter = false;
-  int? _selected; // a tapped, completed level (null = play the frontier)
   double _viewportH = 0;
   int _bgBand = 0; // which world band's background is showing
 
@@ -70,7 +69,7 @@ class _HomeMapState extends State<HomeMap> {
   void _onScroll() {
     if (_viewportH == 0 || !_controller.hasClients) return;
     final centerFromBottom = _controller.offset + _viewportH / 2;
-    final idx = ((centerFromBottom - 90) / _kRowExtent).floor();
+    final idx = ((centerFromBottom - 96) / _kRowExtent).floor();
     final level = (idx + 1).clamp(1, kLevelCount);
     final band = worldBand(level);
     if (band != _bgBand) setState(() => _bgBand = band);
@@ -93,11 +92,16 @@ class _HomeMapState extends State<HomeMap> {
       return;
     }
     if (number == frontier) {
-      setState(() => _selected = null);
       _play(number);
       return;
     }
-    setState(() => _selected = number); // highlight a completed level
+    // A completed level — open its level dialog (replay options).
+    showReplayLevel(
+      context,
+      level: number,
+      stars: AppScope.read(context).starsFor(number),
+      onReplay: () => _launch(number),
+    );
   }
 
   void _play(int number) {
@@ -111,17 +115,12 @@ class _HomeMapState extends State<HomeMap> {
   }
 
   void _launch(int number) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => GameScreen(level: kLevels[number - 1])))
-        .then((_) {
-      if (mounted) setState(() => _selected = null);
-    });
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => GameScreen(level: kLevels[number - 1])),
+    );
   }
 
-  void _goToCurrent() {
-    setState(() => _selected = null);
-    _scrollTo(_frontier);
-  }
+  void _goToCurrent() => _scrollTo(_frontier);
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +149,7 @@ class _HomeMapState extends State<HomeMap> {
               controller: _controller,
               reverse: true,
               itemExtent: _kRowExtent,
-              padding: const EdgeInsets.only(top: 60, bottom: 90),
+              padding: const EdgeInsets.only(top: 112, bottom: 96),
               itemCount: kLevelCount,
               itemBuilder: (context, i) {
                 final number = i + 1;
@@ -159,7 +158,7 @@ class _HomeMapState extends State<HomeMap> {
                   unlocked: frontier,
                   stars: state.starsFor(number),
                   starTotal: state.starTotal,
-                  selected: _selected == number,
+                  selected: false,
                   onTap: () => _tapNode(number),
                 );
               },
@@ -167,56 +166,37 @@ class _HomeMapState extends State<HomeMap> {
           },
         ),
 
-        // "Current Level" pill.
-        Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: _CurrentLevelPill(onTap: _goToCurrent),
-          ),
-        ),
-
-        // Fixed rails.
+        // Fixed rails — below the floating HUD.
         Positioned(
           left: 8,
-          top: 64,
+          top: 104,
           child: _SideRail(adsRemoved: state.adsRemoved),
         ),
         Positioned(
           right: 8,
-          top: 64,
+          top: 104,
           child: _WorldRail(unlocked: frontier),
         ),
 
-        // Selection-aware bottom button.
+        // Jump-to-current chevron — sits just above the right end of PLAY.
+        Positioned(
+          right: 22,
+          bottom: 92,
+          child: _JumpButton(onTap: _goToCurrent),
+        ),
+
+        // Bottom PLAY button — always launches the current level.
         Positioned(
           left: 40,
           right: 40,
           bottom: 14,
-          child: _bottomButton(frontier, state.starsFor(_selected ?? frontier)),
+          child: _bottomButton(frontier),
         ),
       ],
     );
   }
 
-  Widget _bottomButton(int frontier, int selStars) {
-    final sel = _selected;
-    // Replay mode: a completed level is selected.
-    if (sel != null && sel < frontier) {
-      final mastered = selStars >= 3;
-      return _BottomButton(
-        color: mastered ? GameColors.green : const Color(0xFFF2A33C),
-        topLabel: mastered ? 'COMPLETED!' : 'REPLAY',
-        bottomLabel: 'LEVEL $sel',
-        onTap: () => showReplayLevel(
-          context,
-          level: sel,
-          stars: selStars,
-          onReplay: () => _launch(sel),
-        ),
-      );
-    }
-    // Play mode: the next level.
+  Widget _bottomButton(int frontier) {
     return _BottomButton(
       color: GameColors.green,
       topLabel: 'PLAY',
@@ -226,8 +206,9 @@ class _HomeMapState extends State<HomeMap> {
   }
 }
 
-class _CurrentLevelPill extends StatelessWidget {
-  const _CurrentLevelPill({required this.onTap});
+/// Small round "jump to current level" chevron near the PLAY button.
+class _JumpButton extends StatelessWidget {
+  const _JumpButton({required this.onTap});
   final VoidCallback onTap;
 
   @override
@@ -235,32 +216,21 @@ class _CurrentLevelPill extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        width: 46,
+        height: 46,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 6,
               offset: const Offset(0, 3),
             ),
           ],
         ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.arrow_drop_up_rounded, color: GameColors.blue, size: 24),
-            Text(
-              'Current Level',
-              style: TextStyle(
-                color: GameColors.blue,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
+        child: const Icon(Icons.keyboard_arrow_up_rounded,
+            color: GameColors.blue, size: 32),
       ),
     );
   }
@@ -727,7 +697,9 @@ class _RailButton extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: image != null
-                      ? AppImage(image!, size: 40)
+                      ? ClipOval(
+                          child: AppImage(image!, size: 48, fit: BoxFit.cover),
+                        )
                       : Text(emoji ?? '',
                           style: const TextStyle(fontSize: 24)),
                 ),
@@ -870,19 +842,11 @@ class _WorldAvatar extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: ClipOval(
-              // Greyscaled — these are upcoming (locked) worlds.
-              child: ColorFiltered(
-                colorFilter: const ColorFilter.matrix(<double>[
-                  0.33, 0.33, 0.33, 0, 0, //
-                  0.33, 0.33, 0.33, 0, 0, //
-                  0.33, 0.33, 0.33, 0, 0, //
-                  0, 0, 0, 1, 0, //
-                ]),
-                child: AppImage(
-                  world.avatar,
-                  size: 58,
-                  fallback: Text(world.emoji, style: const TextStyle(fontSize: 30)),
-                ),
+              child: AppImage(
+                world.avatar,
+                size: 58,
+                fit: BoxFit.cover,
+                fallback: Text(world.emoji, style: const TextStyle(fontSize: 30)),
               ),
             ),
           ),
