@@ -4,6 +4,23 @@ import '../data/daily_rewards.dart';
 import '../services/audio_service.dart';
 import '../state/app_scope.dart';
 
+/// Icon for each reward kind (coins + the four power-ups).
+IconData _rewardIcon(DailyReward r) => switch (r.kind) {
+      RewardKind.coins => Icons.monetization_on,
+      RewardKind.hint => Icons.lightbulb_rounded,
+      RewardKind.eraser => Icons.cleaning_services_rounded,
+      RewardKind.magic => Icons.auto_awesome_rounded,
+      RewardKind.undo => Icons.undo_rounded,
+    };
+
+Color _rewardColor(DailyReward r) => switch (r.kind) {
+      RewardKind.coins => const Color(0xFFF4B400),
+      RewardKind.hint => const Color(0xFFFFC83D),
+      RewardKind.eraser => const Color(0xFFEE4B4B),
+      RewardKind.magic => const Color(0xFF6E7BF2),
+      RewardKind.undo => const Color(0xFF27A35A),
+    };
+
 /// Shows the 7-day daily-streak reward grid. Today's reward pulses; collecting
 /// it plays a little bounce + reward burst. Collected days are checked, future
 /// days dimmed, and Day 7 is a golden chest.
@@ -110,7 +127,8 @@ class _DailyRewardBodyState extends State<_DailyRewardBody>
             const SizedBox(height: 4),
             Text(
               claimable
-                  ? 'Day $offered — tap Collect to claim!'
+                  ? 'Week ${state.rewardCycle % rewardWeekCount + 1} · '
+                      'Day $offered — tap Collect!'
                   : 'Come back tomorrow for Day '
                       '${offered >= 7 ? 1 : offered + 1}',
               style: TextStyle(color: palette.textMuted),
@@ -127,7 +145,7 @@ class _DailyRewardBodyState extends State<_DailyRewardBody>
                     for (var day = 1; day <= 7; day++)
                       _cell(
                         palette: palette,
-                        reward: rewardForDay(day),
+                        reward: rewardForDay(day, state.rewardCycle),
                         collected: day <= collectedUpTo,
                         isToday: claimable && day == offered,
                         big: day == 7,
@@ -290,12 +308,8 @@ class _RewardCell extends StatelessWidget {
               )
             else
               Icon(
-                reward.isCoins ? Icons.monetization_on : Icons.lightbulb,
-                color: isChest
-                    ? Colors.white
-                    : (reward.isCoins
-                        ? const Color(0xFFF4B400)
-                        : palette.primary),
+                _rewardIcon(reward),
+                color: isChest ? Colors.white : _rewardColor(reward),
                 size: big ? 38 : 26,
               ),
             const SizedBox(height: 4),
@@ -354,13 +368,8 @@ class _RewardBurst extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        reward.isCoins ? Icons.monetization_on : Icons.lightbulb,
-                        color: reward.isCoins
-                            ? const Color(0xFFF4B400)
-                            : const Color(0xFFFFD23F),
-                        size: 30,
-                      ),
+                      Icon(_rewardIcon(reward),
+                          color: _rewardColor(reward), size: 30),
                       const SizedBox(width: 8),
                       Text(
                         '+${reward.label}',

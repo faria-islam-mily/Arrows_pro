@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../data/daily_rewards.dart';
+import '../models/power_up.dart';
 import 'storage.dart';
 
 /// Persistent app-wide state: selected theme, level progress, daily streak,
@@ -27,6 +28,7 @@ class AppState extends ChangeNotifier {
   static const _kHints = 'hints';
   static const _kRewardDay = 'rewardDay';
   static const _kRewardClaimed = 'rewardClaimedDate';
+  static const _kRewardCycle = 'rewardCycle';
 
   int _themeIndex = 0;
   int _unlockedLevel = 1; // highest level number the player may open
@@ -41,9 +43,41 @@ class AppState extends ChangeNotifier {
   String? _dailyDone; // yyyy-mm-dd the daily challenge was last completed
 
   int _coins = 0;
-  int _hints = 1; // start with one free hint
+  // Owned power-ups. Start at 0 — each is unlocked (and the first one granted)
+  // at its introduction level (see [powerUnlockLevel]).
+  int _hints = 0;
+  int _erasers = 0;
+  int _magics = 0;
+  int _undos = 0;
   int _rewardDay = 0; // last claimed day in the 1..7 cycle (0 = none yet)
   String? _rewardClaimed; // yyyy-mm-dd of the last daily-reward claim
+  int _rewardCycle = 0; // which weekly reward table is active (advances weekly)
+  final Set<PowerUp> _seenIntros = {}; // power intros already shown
+
+  /// The level at which each power is introduced (gradual rollout).
+  static const Map<PowerUp, int> _unlockLevel = {
+    PowerUp.hint: 4,
+    PowerUp.undo: 12,
+    PowerUp.eraser: 24,
+    PowerUp.magic: 38,
+  };
+
+  int powerUnlockLevel(PowerUp p) => _unlockLevel[p]!;
+
+  /// A power is available once the player has reached its unlock level (playing
+  /// it counts as reaching it, so it also works with debug level-jumps).
+  bool isPowerUnlocked(PowerUp p, int currentLevel) {
+    final reached = currentLevel > _unlockedLevel ? currentLevel : _unlockedLevel;
+    return reached >= _unlockLevel[p]!;
+  }
+
+  bool hasSeenIntro(PowerUp p) => _seenIntros.contains(p);
+
+  Future<void> markIntroSeen(PowerUp p) async {
+    if (!_seenIntros.add(p)) return;
+    notifyListeners();
+    await _storage.setBool('intro_${p.storageKey}', true);
+  }
 
   int get themeIndex => _themeIndex;
   int get unlockedLevel => _unlockedLevel;
@@ -55,6 +89,43 @@ class AppState extends ChangeNotifier {
   bool get tutorialSeen => _tutorialSeen;
   int get coins => _coins;
   int get hints => _hints;
+  int get rewardCycle => _rewardCycle;
+
+  /// Owned count of a given power-up.
+  int powerCount(PowerUp p) => switch (p) {
+        PowerUp.hint => _hints,
+        PowerUp.eraser => _erasers,
+        PowerUp.magic => _magics,
+        PowerUp.undo => _undos,
+      };
+
+  void _setPower(PowerUp p, int v) {
+    switch (p) {
+      case PowerUp.hint:
+        _hints = v;
+      case PowerUp.eraser:
+        _erasers = v;
+      case PowerUp.magic:
+        _magics = v;
+      case PowerUp.undo:
+        _undos = v;
+    }
+  }
+
+  Future<void> addPower(PowerUp p, int n) async {
+    _setPower(p, powerCount(p) + n);
+    notifyListeners();
+    await _storage.setInt(p.storageKey, powerCount(p));
+  }
+
+  /// Consume one of [p]; returns true if one was available.
+  Future<bool> usePower(PowerUp p) async {
+    if (powerCount(p) <= 0) return false;
+    _setPower(p, powerCount(p) - 1);
+    notifyListeners();
+    await _storage.setInt(p.storageKey, powerCount(p));
+    return true;
+  }
 
   /// Today's daily reward can still be collected.
   bool get canClaimDaily => _rewardClaimed != _dateKey(DateTime.now());
@@ -109,9 +180,16 @@ class AppState extends ChangeNotifier {
     _tutorialSeen = _storage.getBool(_kTutorialSeen, false);
     _dailyDone = _storage.getString(_kDailyDone);
     _coins = _storage.getInt(_kCoins, 0);
-    _hints = _storage.getInt(_kHints, 1);
+    _hints = _storage.getInt(_kHints, 0);
+    _erasers = _storage.getInt(PowerUp.eraser.storageKey, 0);
+    _magics = _storage.getInt(PowerUp.magic.storageKey, 0);
+    _undos = _storage.getInt(PowerUp.undo.storageKey, 0);
     _rewardDay = _storage.getInt(_kRewardDay, 0);
     _rewardClaimed = _storage.getString(_kRewardClaimed);
+    _rewardCycle = _storage.getInt(_kRewardCycle, 0);
+    for (final p in PowerUp.values) {
+      if (_storage.getBool('intro_${p.storageKey}', false)) _seenIntros.add(p);
+    }
   }
 
   Future<void> addCoins(int n) async {
@@ -130,39 +208,37 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  Future<void> addHints(int n) async {
-    _hints += n;
-    notifyListeners();
-    await _storage.setInt(_kHints, _hints);
-  }
+  // Back-compat helpers for hints (delegate to the generic power inventory).
+  Future<void> addHints(int n) => addPower(PowerUp.hint, n);
+  Future<bool> useHint() => usePower(PowerUp.hint);
 
-  /// Consume one hint token; returns true if one was available.
-  Future<bool> useHint() async {
-    if (_hints <= 0) return false;
-    _hints -= 1;
-    notifyListeners();
-    await _storage.setInt(_kHints, _hints);
-    return true;
-  }
-
-  /// Claim today's daily reward. Returns the granted reward, or null if it was
-  /// already claimed today.
+  /// Claim today's daily reward (from the current weekly table). Returns the
+  /// granted reward, or null if it was already claimed today. Completing Day 7
+  /// advances to the next week's table.
   Future<DailyReward?> claimDailyReward() async {
     if (!canClaimDaily) return null;
     final day = offeredRewardDay;
-    final reward = rewardForDay(day);
+    final reward = rewardForDay(day, _rewardCycle);
     _rewardDay = day;
     _rewardClaimed = _dateKey(DateTime.now());
+
     if (reward.isCoins) {
       _coins += reward.amount;
+      await _storage.setInt(_kCoins, _coins);
     } else {
-      _hints += reward.amount;
+      final p = reward.power!;
+      _setPower(p, powerCount(p) + reward.amount);
+      await _storage.setInt(p.storageKey, powerCount(p));
     }
+    // Finishing the week rotates to a fresh reward table next time.
+    if (day >= 7) {
+      _rewardCycle++;
+      await _storage.setInt(_kRewardCycle, _rewardCycle);
+    }
+
     notifyListeners();
     await _storage.setInt(_kRewardDay, _rewardDay);
     await _storage.setString(_kRewardClaimed, _rewardClaimed!);
-    await _storage.setInt(_kCoins, _coins);
-    await _storage.setInt(_kHints, _hints);
     return reward;
   }
 

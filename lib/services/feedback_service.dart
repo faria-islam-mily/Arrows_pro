@@ -21,10 +21,15 @@ class FeedbackService {
     _play('pop');
   }
 
-  /// A blocked tap (wrong move, costs a life).
+  /// A blocked tap — the "bump" against the arrow in front.
   void blocked() {
     if (state.vibrationOn) HapticFeedback.heavyImpact();
     _play('blocked');
+  }
+
+  /// A heart was lost — a distinct, already-loud descending tone.
+  void heartLost() {
+    _play('heart');
   }
 
   /// Level cleared.
@@ -38,8 +43,8 @@ class FeedbackService {
     if (state.vibrationOn) HapticFeedback.selectionClick();
   }
 
-  void _play(String clip) {
+  void _play(String clip, {bool loud = false}) {
     if (!state.soundOn) return;
-    AudioService.instance.sfx(clip); // no-op until clips are added to assets/sfx
+    AudioService.instance.sfx(clip, loud: loud);
   }
 }

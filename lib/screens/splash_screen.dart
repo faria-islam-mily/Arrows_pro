@@ -24,17 +24,17 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     _c = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 2000),
     )..forward();
     _logo = CurvedAnimation(
       parent: _c,
-      curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
+      curve: const Interval(0.0, 0.42, curve: Curves.easeOutBack),
     );
     _text = CurvedAnimation(
       parent: _c,
-      curve: const Interval(0.45, 1.0, curve: Curves.easeOut),
+      curve: const Interval(0.62, 1.0, curve: Curves.easeOut),
     );
-    Future.delayed(const Duration(milliseconds: 2800), _go);
+    Future.delayed(const Duration(milliseconds: 3100), _go);
   }
 
   void _go() {
@@ -69,7 +69,10 @@ class _SplashScreenState extends State<SplashScreen>
             children: [
               ScaleTransition(
                 scale: _logo,
-                child: FadeTransition(opacity: _logo, child: const _Logo()),
+                child: FadeTransition(
+                  opacity: _logo,
+                  child: _Logo(progress: _c),
+                ),
               ),
               const SizedBox(height: 28),
               FadeTransition(
@@ -117,64 +120,94 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// A small branded logo: a white rounded card with three colored arrows.
+/// A branded logo: a white rounded card with three colored arrows that shoot
+/// into place head-first (staggered) as the splash opens.
 class _Logo extends StatelessWidget {
-  const _Logo();
+  const _Logo({required this.progress});
+
+  final Animation<double> progress; // 0..1 splash controller
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 104,
-      height: 104,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+    return AnimatedBuilder(
+      animation: progress,
+      builder: (context, _) => Container(
+        width: 118,
+        height: 118,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Colors.white, Color(0xFFEFF3F7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ],
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2D6CDF).withValues(alpha: 0.18),
+              blurRadius: 26,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: CustomPaint(painter: _LogoPainter(progress.value)),
       ),
-      child: CustomPaint(painter: _LogoPainter()),
     );
   }
 }
 
 class _LogoPainter extends CustomPainter {
+  _LogoPainter(this.t);
+
+  final double t; // splash controller value 0..1
+
+  double _seg(double a, double b) => ((t - a) / (b - a)).clamp(0.0, 1.0);
+
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.width;
-    void arrow(Offset a, Offset b, Color color) {
-      final p = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = s * 0.075
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-      canvas.drawLine(a, b, p);
+
+    // Each arrow is "drawn" head-first: the shaft grows from tail toward head
+    // and the arrowhead rides the leading tip, settling at the head at frac=1.
+    void arrow(Offset a, Offset b, Color color, double frac) {
+      if (frac <= 0) return;
       final dir = (b - a) / (b - a).distance;
       final perp = Offset(-dir.dy, dir.dx);
-      final tip = b + dir * (s * 0.02);
-      final base = b - dir * (s * 0.07);
+      final tip = a + (b - a) * frac;
+
+      canvas.drawLine(
+        a,
+        tip,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = s * 0.085
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+
+      // Head pops to full size within the first sliver of the draw.
+      final hs = (frac / 0.12).clamp(0.0, 1.0);
+      final apex = tip + dir * (s * 0.02 * hs);
+      final base = tip - dir * (s * 0.07 * hs);
       final head = Path()
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo((base + perp * s * 0.06).dx, (base + perp * s * 0.06).dy)
-        ..lineTo((base - perp * s * 0.06).dx, (base - perp * s * 0.06).dy)
+        ..moveTo(apex.dx, apex.dy)
+        ..lineTo((base + perp * s * 0.065 * hs).dx,
+            (base + perp * s * 0.065 * hs).dy)
+        ..lineTo((base - perp * s * 0.065 * hs).dx,
+            (base - perp * s * 0.065 * hs).dy)
         ..close();
       canvas.drawPath(head, Paint()..color = color);
     }
 
-    // navy (up), blue (up), red (right) — echoes the genre's icon style.
+    // navy (up), blue (up), red (right) — staggered shoot-in.
     arrow(Offset(s * 0.34, s * 0.74), Offset(s * 0.34, s * 0.28),
-        const Color(0xFF14243A));
+        const Color(0xFF14243A), Curves.easeOut.transform(_seg(0.30, 0.58)));
     arrow(Offset(s * 0.56, s * 0.78), Offset(s * 0.56, s * 0.30),
-        const Color(0xFF2D6CDF));
+        const Color(0xFF2D6CDF), Curves.easeOut.transform(_seg(0.42, 0.70)));
     arrow(Offset(s * 0.28, s * 0.58), Offset(s * 0.74, s * 0.58),
-        const Color(0xFFE63946));
+        const Color(0xFFE63946), Curves.easeOut.transform(_seg(0.56, 0.86)));
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _LogoPainter old) => old.t != t;
 }

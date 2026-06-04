@@ -7,23 +7,27 @@ import '../state/app_scope.dart';
 /// Restart action (pass [onRestart] from the game screen). Mirrors the look of
 /// the theme picker.
 Future<void> showSettingsSheet(BuildContext context,
-    {VoidCallback? onRestart, VoidCallback? onHowToPlay}) {
+    {VoidCallback? onRestart, VoidCallback? onHowToPlay, VoidCallback? onTheme}) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: context.palette.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (sheetContext) =>
-        _SettingsBody(onRestart: onRestart, onHowToPlay: onHowToPlay),
+    builder: (sheetContext) => _SettingsBody(
+      onRestart: onRestart,
+      onHowToPlay: onHowToPlay,
+      onTheme: onTheme,
+    ),
   );
 }
 
 class _SettingsBody extends StatelessWidget {
-  const _SettingsBody({this.onRestart, this.onHowToPlay});
+  const _SettingsBody({this.onRestart, this.onHowToPlay, this.onTheme});
 
   final VoidCallback? onRestart;
   final VoidCallback? onHowToPlay;
+  final VoidCallback? onTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +71,17 @@ class _SettingsBody extends StatelessWidget {
                 AudioService.instance.setMusicEnabled(v);
               },
             ),
+            if (onTheme != null) ...[
+              const SizedBox(height: 12),
+              _ActionTile(
+                icon: Icons.palette_outlined,
+                label: 'Theme',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onTheme!();
+                },
+              ),
+            ],
             if (onHowToPlay != null) ...[
               const SizedBox(height: 8),
               _ActionTile(

@@ -1,14 +1,20 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../data/levels.dart';
 import '../game/game_controller.dart';
 import '../models/level.dart';
+import '../models/power_up.dart';
 import '../services/feedback_service.dart';
 import '../state/app_scope.dart';
 import '../widgets/board_view.dart';
+import '../widgets/booster_sheet.dart';
 import '../widgets/confetti_overlay.dart';
+import '../widgets/power_intro_overlay.dart';
 import '../widgets/level_thumbnail.dart';
 import '../widgets/settings_sheet.dart';
+import '../widgets/theme_picker.dart';
 import '../widgets/tutorial_overlay.dart';
 
 class GameScreen extends StatefulWidget {
@@ -20,16 +26,19 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen>
+    with SingleTickerProviderStateMixin {
   late GameController _game;
   FeedbackService? _feedback;
   final BoardActions _boardActions = BoardActions();
+  late final AnimationController _shake; // wrong-tap screen shake
 
   int _lives = 3;
   int? _hintId;
   bool _completed = false;
   bool _showConfetti = false;
   bool _showTutorial = false;
+  PowerUp? _introPower; // power being introduced on this level (intro overlay)
   int _lastRemaining = 0;
   int _coinsEarned = 0;
 
@@ -38,6 +47,17 @@ class _GameScreenState extends State<GameScreen> {
     super.initState();
     _game = GameController(widget.level)..addListener(_onChange);
     _lastRemaining = _game.remaining;
+    _shake = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+  }
+
+  /// Horizontal shake offset (damped oscillation) for the current frame.
+  double get _shakeDx {
+    final t = _shake.value;
+    if (t == 0) return 0;
+    return math.sin(t * math.pi * 5) * 13 * (1 - t);
   }
 
   @override
@@ -46,17 +66,35 @@ class _GameScreenState extends State<GameScreen> {
     // Read app state once dependencies are available.
     final state = AppScope.read(context);
     _feedback ??= FeedbackService(state);
-    // First-run coach: only on Level 1, the natural first puzzle.
-    if (!state.tutorialSeen && !_showTutorial && widget.level.number == 1) {
+    final n = widget.level.number;
+    // First-run coach: only on Level 1; highlights a movable arrow to tap.
+    if (!state.tutorialSeen && !_showTutorial && n == 1) {
       _showTutorial = true;
+      _hintId = _game.hintArrowId(); // spotlight an arrow to tap
+    }
+    // Power introduction: if this level unlocks a power not yet introduced.
+    if (_introPower == null) {
+      for (final p in PowerUp.values) {
+        if (n == state.powerUnlockLevel(p) && !state.hasSeenIntro(p)) {
+          _introPower = p;
+          break;
+        }
+      }
     }
   }
 
-  void _replayTutorial() => setState(() => _showTutorial = true);
+  void _replayTutorial() => setState(() {
+        _showTutorial = true;
+        _hintId = _game.hintArrowId();
+      });
 
   void _onChange() {
     // A successful tap reduces the remaining count; play the success feel.
-    if (_game.remaining < _lastRemaining) _feedback?.tapSuccess();
+    if (_game.remaining < _lastRemaining) {
+      _feedback?.tapSuccess();
+      // The coach completes only when the player actually clears an arrow.
+      if (_showTutorial) _dismissTutorial();
+    }
     _lastRemaining = _game.remaining;
 
     if (_game.isComplete && !_completed) {
@@ -69,8 +107,8 @@ class _GameScreenState extends State<GameScreen> {
       if (inPack) state.recordStars(widget.level.number, _lives);
       if (widget.level.difficulty == 'Daily') state.markDailyDone();
 
-      // Coins: base + a bonus per heart still held (rewards clean solves).
-      _coinsEarned = 10 + _lives * 5;
+      // Coins by star tier (hearts left): 3★=50, 2★=35, 1★=20.
+      _coinsEarned = switch (_lives) { 3 => 50, 2 => 35, _ => 20 };
       state.addCoins(_coinsEarned);
 
       _feedback?.win();
@@ -81,27 +119,11 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _onBlocked() {
-    _feedback?.blocked();
+    _feedback?.blocked(); // bump sound + haptic
+    _shake.forward(from: 0); // jolt the screen on a wrong tap
     setState(() => _lives = (_lives - 1).clamp(0, 3));
+    _feedback?.heartLost(); // distinct "heart lost" tone
     if (_lives == 0) _showFail();
-  }
-
-  Future<void> _useHint() async {
-    if (_game.hintArrowId() == null) return; // nothing to reveal
-    final state = AppScope.read(context);
-    // Spend a hint token; fall back to 30 coins.
-    final ok = await state.useHint() || await state.spendCoins(30);
-    if (!ok) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No hints — collect a daily reward or earn coins.'),
-        ),
-      );
-      return;
-    }
-    _feedback?.tick();
-    setState(() => _hintId = _game.hintArrowId());
   }
 
   void _toast(String msg) {
@@ -115,16 +137,25 @@ class _GameScreenState extends State<GameScreen> {
       ));
   }
 
-  // Eraser: arm the board so the next tapped arrow is removed even if blocked.
-  // We only bill the 40 coins once it's actually spent on an arrow.
-  static const _eraserCost = 40;
-  static const _magicCost = 25;
-  static const _undoCost = 20;
+  // Each power: if you own one, consume it and act; if you own none, open that
+  // power's buy page.
+
+  Future<void> _useHint() async {
+    if (_game.hintArrowId() == null) {
+      _toast('No hint available right now');
+      return;
+    }
+    if (await AppScope.read(context).usePower(PowerUp.hint)) {
+      _feedback?.tick();
+      setState(() => _hintId = _game.hintArrowId());
+    } else if (mounted) {
+      showHintBoosterSheet(context);
+    }
+  }
 
   Future<void> _useEraser() async {
-    final state = AppScope.read(context);
-    if (state.coins < _eraserCost) {
-      _toast('Need $_eraserCost coins for the Eraser');
+    if (AppScope.read(context).powerCount(PowerUp.eraser) <= 0) {
+      showEraserBoosterSheet(context);
       return;
     }
     _boardActions.armEraser?.call();
@@ -132,38 +163,33 @@ class _GameScreenState extends State<GameScreen> {
     _toast('Tap any arrow to erase it');
   }
 
-  void _onEraserUsed() {
-    AppScope.read(context).spendCoins(_eraserCost);
-  }
+  // Consume one eraser only when it's actually spent on an arrow.
+  void _onEraserUsed() => AppScope.read(context).usePower(PowerUp.eraser);
 
-  // Magic: instantly slide out one currently-movable arrow.
   Future<void> _useMagic() async {
     if (_game.hintArrowId() == null) {
       _toast('No movable arrow right now');
       return;
     }
-    final state = AppScope.read(context);
-    if (!await state.spendCoins(_magicCost)) {
-      _toast('Need $_magicCost coins for Magic');
-      return;
+    if (await AppScope.read(context).usePower(PowerUp.magic)) {
+      _boardActions.autoStep?.call();
+      _feedback?.tick();
+    } else if (mounted) {
+      showMagicBoosterSheet(context);
     }
-    _boardActions.autoStep?.call();
-    _feedback?.tick();
   }
 
-  // Undo: restore the last removed arrow.
   Future<void> _useUndo() async {
     if (!_game.canUndo) {
       _toast('Nothing to undo');
       return;
     }
-    final state = AppScope.read(context);
-    if (!await state.spendCoins(_undoCost)) {
-      _toast('Need $_undoCost coins to Undo');
-      return;
+    if (await AppScope.read(context).usePower(PowerUp.undo)) {
+      _boardActions.undo?.call();
+      _feedback?.tick();
+    } else if (mounted) {
+      showUndoBoosterSheet(context);
     }
-    _boardActions.undo?.call();
-    _feedback?.tick();
   }
 
   void _restart() {
@@ -179,7 +205,22 @@ class _GameScreenState extends State<GameScreen> {
 
   void _dismissTutorial() {
     AppScope.read(context).markTutorialSeen();
-    setState(() => _showTutorial = false);
+    setState(() {
+      _showTutorial = false;
+      _hintId = null;
+    });
+  }
+
+  /// The player tapped "Got it" on a power's intro: grant the first one + mark
+  /// it seen so it never shows again.
+  void _dismissIntro() {
+    final p = _introPower;
+    if (p == null) return;
+    final state = AppScope.read(context);
+    state.addPower(p, 1);
+    state.markIntroSeen(p);
+    _feedback?.tick();
+    setState(() => _introPower = null);
   }
 
   void _showWin() {
@@ -204,8 +245,7 @@ class _GameScreenState extends State<GameScreen> {
           Navigator.of(context).pop();
           if (inPack && next < kLevels.length) {
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                  builder: (_) => GameScreen(level: kLevels[next])),
+              _nextLevelRoute(kLevels[next]),
             );
           } else {
             Navigator.of(context).pop();
@@ -215,15 +255,36 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  /// A lively transition to the next level: the new board scales + fades up
+  /// while the old one fades out beneath it.
+  Route<void> _nextLevelRoute(Level level) {
+    return PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 480),
+      reverseTransitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, __, ___) => GameScreen(level: level),
+      transitionsBuilder: (_, anim, __, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   void _showFail() {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _ResultDialog(
-        title: 'Out of Lives',
-        subtitle: 'Give it another go.',
-        primaryLabel: 'Retry',
-        onPrimary: () {
+      builder: (_) => _FailDialog(
+        onWatchVideo: () {
+          Navigator.of(context).pop();
+          _continueWithVideo();
+        },
+        onRestart: () {
           Navigator.of(context).pop();
           _restart();
         },
@@ -231,8 +292,52 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  // Placeholder for a rewarded video ad: refill hearts and keep the current
+  // board so the player continues right where they ran out (progress kept).
+  // TODO: gate behind a real rewarded ad (AdMob / Unity Ads).
+  void _continueWithVideo() {
+    _feedback?.tick();
+    setState(() {
+      _lives = 3;
+      _completed = false;
+    });
+  }
+
+  /// Builds a bottom-bar tile: a locked card (dimmed + 🔒 + "Lv N") until the
+  /// power is introduced, otherwise the normal use/buy tile.
+  Widget _powerTile(
+    PowerUp p,
+    IconData icon,
+    List<Color> colors,
+    VoidCallback onUse,
+    VoidCallback onBuy, {
+    bool actionEnabled = true,
+  }) {
+    final st = context.appState;
+    if (!st.isPowerUnlocked(p, widget.level.number)) {
+      final lv = st.powerUnlockLevel(p);
+      return _PowerButton(
+        icon: icon,
+        colors: colors,
+        locked: true,
+        unlockLevel: lv,
+        onTap: () => _toast('${p.label} unlocks at Level $lv'),
+      );
+    }
+    return _PowerButton(
+      icon: icon,
+      colors: colors,
+      count: st.powerCount(p),
+      plus: true,
+      onPlus: onBuy,
+      enabled: actionEnabled,
+      onTap: onUse,
+    );
+  }
+
   @override
   void dispose() {
+    _shake.dispose();
     _game.removeListener(_onChange);
     _game.dispose();
     super.dispose();
@@ -242,13 +347,20 @@ class _GameScreenState extends State<GameScreen> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final progress = _game.progress;
-    final hints = context.appState.hints;
-    final coins = context.appState.coins;
+    final state = context.appState;
+    final coins = state.coins;
+    final topInset = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: palette.background,
-      body: Stack(
-        children: [
+      body: AnimatedBuilder(
+        animation: _shake,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(_shakeDx, 0),
+          child: child,
+        ),
+        child: Stack(
+          children: [
           // Full-screen, freely pannable board behind everything.
           Positioned.fill(
             child: BoardView(
@@ -260,27 +372,27 @@ class _GameScreenState extends State<GameScreen> {
             ),
           ),
 
-          // Top controls overlay (back, title, settings, hearts, progress).
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                padding: const EdgeInsets.fromLTRB(6, 4, 6, 12),
-                decoration: BoxDecoration(
-                  color: palette.surface,
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+          // Top controls overlay — a panel that fills the notch/status bar.
+          Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.fromLTRB(6, topInset + 6, 6, 12),
+              decoration: BoxDecoration(
+                color: palette.surface,
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.28),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                     Row(
                       children: [
                         IconButton(
@@ -292,7 +404,7 @@ class _GameScreenState extends State<GameScreen> {
                             child: Text(
                               widget.level.difficulty == 'Daily'
                                   ? 'Daily'
-                                  : 'LVL ${widget.level.number}',
+                                  : 'Level ${widget.level.number}',
                               textAlign: TextAlign.center,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -311,6 +423,7 @@ class _GameScreenState extends State<GameScreen> {
                             context,
                             onRestart: _restart,
                             onHowToPlay: _replayTutorial,
+                            onTheme: () => showThemePicker(context),
                           ),
                           icon: Icon(Icons.settings_outlined,
                               color: palette.arrow),
@@ -355,7 +468,6 @@ class _GameScreenState extends State<GameScreen> {
                 ),
               ),
             ),
-          ),
 
           // Bottom power-up bar — four grounded square cards.
           Positioned(
@@ -369,41 +481,43 @@ class _GameScreenState extends State<GameScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: _PowerButton(
-                        icon: Icons.lightbulb_rounded,
-                        colors: const [Color(0xFFFFC83D), Color(0xFFF4A100)],
-                        count: hints > 0 ? hints : null,
-                        coinCost: hints > 0 ? null : 30,
-                        plus: true,
-                        onTap: _useHint,
+                      child: _powerTile(
+                        PowerUp.hint,
+                        Icons.lightbulb_rounded,
+                        const [Color(0xFFFFC83D), Color(0xFFF4A100)],
+                        _useHint,
+                        () => showHintBoosterSheet(context),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _PowerButton(
-                        icon: Icons.cleaning_services_rounded,
-                        colors: const [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
-                        coinCost: _eraserCost,
-                        onTap: _useEraser,
+                      child: _powerTile(
+                        PowerUp.eraser,
+                        Icons.cleaning_services_rounded,
+                        const [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
+                        _useEraser,
+                        () => showEraserBoosterSheet(context),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _PowerButton(
-                        icon: Icons.auto_awesome_rounded,
-                        colors: const [Color(0xFF8E8EF6), Color(0xFF4E5DF2)],
-                        coinCost: _magicCost,
-                        onTap: _useMagic,
+                      child: _powerTile(
+                        PowerUp.magic,
+                        Icons.auto_awesome_rounded,
+                        const [Color(0xFF8E8EF6), Color(0xFF4E5DF2)],
+                        _useMagic,
+                        () => showMagicBoosterSheet(context),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _PowerButton(
-                        icon: Icons.undo_rounded,
-                        colors: const [Color(0xFF36C58E), Color(0xFF1E9E8A)],
-                        coinCost: _undoCost,
-                        enabled: _game.canUndo,
-                        onTap: _useUndo,
+                      child: _powerTile(
+                        PowerUp.undo,
+                        Icons.undo_rounded,
+                        const [Color(0xFF36C58E), Color(0xFF1E9E8A)],
+                        _useUndo,
+                        () => showUndoBoosterSheet(context),
+                        actionEnabled: _game.canUndo,
                       ),
                     ),
                   ],
@@ -422,15 +536,20 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ),
 
-          // First-run coach overlay.
-          if (_showTutorial) TutorialOverlay(onDismiss: _dismissTutorial),
+          // First-run coach (interactive — closes only when you clear an arrow).
+          if (_showTutorial) const TutorialOverlay(),
+
+          // Power introduction (on the level a power unlocks).
+          if (_introPower != null)
+            PowerIntroOverlay(power: _introPower!, onDismiss: _dismissIntro),
         ],
+        ),
       ),
     );
   }
 }
 
-class _ResultDialog extends StatelessWidget {
+class _ResultDialog extends StatefulWidget {
   const _ResultDialog({
     required this.title,
     required this.subtitle,
@@ -450,77 +569,133 @@ class _ResultDialog extends StatelessWidget {
   final Level? pictureLevel; // show the cleared picture when set
 
   @override
+  State<_ResultDialog> createState() => _ResultDialogState();
+}
+
+class _ResultDialogState extends State<_ResultDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1150),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  double _seg(double a, double b) => ((_c.value - a) / (b - a)).clamp(0.0, 1.0);
+
+  @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Dialog(
-      backgroundColor: palette.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (pictureLevel != null) ...[
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: palette.background,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: LevelThumbnail(
-                  arrows: pictureLevel!.arrows(),
-                  rows: pictureLevel!.rows,
-                  cols: pictureLevel!.cols,
-                  color: palette.arrow,
-                  size: 180,
-                ),
-              ),
-              const SizedBox(height: 18),
-            ],
-            Text(
-              title,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Text(subtitle, style: TextStyle(color: palette.textMuted)),
-            if (stars != null) ...[
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < 3; i++)
-                    Icon(
-                      i < stars! ? Icons.star_rounded : Icons.star_outline_rounded,
-                      size: 40,
-                      color: const Color(0xFFE9C46A),
+    final stars = widget.stars;
+
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final cardScale = Curves.easeOutBack.transform(_seg(0.0, 0.34));
+        return Opacity(
+          opacity: _seg(0.0, 0.18),
+          child: Transform.scale(
+            scale: cardScale,
+            child: Dialog(
+              backgroundColor: palette.surface,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24)),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.pictureLevel != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: palette.background,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: LevelThumbnail(
+                          arrows: widget.pictureLevel!.arrows(),
+                          rows: widget.pictureLevel!.rows,
+                          cols: widget.pictureLevel!.cols,
+                          color: palette.arrow,
+                          size: 180,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                    Text(
+                      widget.title,
+                      style: const TextStyle(
+                          fontSize: 28, fontWeight: FontWeight.w800),
                     ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(widget.subtitle,
+                        style: TextStyle(color: palette.textMuted)),
+                    if (stars != null) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var i = 0; i < 3; i++)
+                            Transform.scale(
+                              // Earned stars pop in one-by-one; empties stay put.
+                              scale: i < stars
+                                  ? Curves.easeOutBack.transform(
+                                      _seg(0.34 + i * 0.18, 0.58 + i * 0.18))
+                                  : 1.0,
+                              child: Icon(
+                                i < stars
+                                    ? Icons.star_rounded
+                                    : Icons.star_outline_rounded,
+                                size: 42,
+                                color: const Color(0xFFFFC83D),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                    if (widget.coins > 0) ...[
+                      const SizedBox(height: 14),
+                      Opacity(
+                        opacity: _seg(0.82, 1.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.monetization_on,
+                                color: Color(0xFFF4B400), size: 22),
+                            const SizedBox(width: 6),
+                            Text(
+                              '+${widget.coins}',
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                          onPressed: widget.onPrimary,
+                          child: Text(widget.primaryLabel)),
+                    ),
+                  ],
+                ),
               ),
-            ],
-            if (coins > 0) ...[
-              const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.monetization_on,
-                      color: Color(0xFFF4B400), size: 22),
-                  const SizedBox(width: 6),
-                  Text(
-                    '+$coins',
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(onPressed: onPrimary, child: Text(primaryLabel)),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -533,45 +708,57 @@ class _PowerButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.colors,
-    this.coinCost,
     this.count,
     this.plus = false,
+    this.onPlus,
     this.enabled = true,
+    this.locked = false,
+    this.unlockLevel,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final List<Color> colors;
-  final int? coinCost;
   final int? count;
   final bool plus;
+  final VoidCallback? onPlus;
   final bool enabled;
+  final bool locked; // not yet introduced — shows a lock + "Lv N"
+  final int? unlockLevel;
 
   @override
   Widget build(BuildContext context) {
-    final grad = enabled
-        ? colors
-        : const [Color(0xFF6B7280), Color(0xFF4B5563)]; // grey when disabled
+    final active = enabled && !locked;
+    final grad = locked
+        ? const [Color(0xFF565B66), Color(0xFF3C414B)] // greyed lock card
+        : (enabled
+            ? colors
+            : const [Color(0xFF6B7280), Color(0xFF4B5563)]); // dimmed/disabled
 
-    // Info chip: a count (free uses) takes priority, else the coin cost.
-    Widget? chip;
-    if (count != null) {
-      chip = _chip(child: Text('x$count', style: _chipText));
-    } else if (coinCost != null) {
-      chip = _chip(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.monetization_on, size: 11, color: Color(0xFFFFD23F)),
-            const SizedBox(width: 3),
-            Text('$coinCost', style: _chipText),
-          ],
-        ),
+    final Widget content;
+    if (locked) {
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.lock_rounded, size: 22, color: Colors.white),
+          const SizedBox(height: 4),
+          _chip(child: Text('Lv $unlockLevel', style: _chipText)),
+        ],
+      );
+    } else {
+      final chip =
+          count != null ? _chip(child: Text('x$count', style: _chipText)) : null;
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 26, color: Colors.white),
+          if (chip != null) ...[const SizedBox(height: 5), chip],
+        ],
       );
     }
 
     return Opacity(
-      opacity: enabled ? 1 : 0.55,
+      opacity: locked ? 0.7 : (enabled ? 1 : 0.55),
       child: Container(
         height: 66,
         decoration: BoxDecoration(
@@ -598,35 +785,34 @@ class _PowerButton extends StatelessWidget {
                 borderRadius: BorderRadius.circular(18),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(18),
-                  onTap: enabled ? onTap : null,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(icon, size: 26, color: Colors.white),
-                        if (chip != null) ...[
-                          const SizedBox(height: 5),
-                          chip,
-                        ],
-                      ],
-                    ),
-                  ),
+                  onTap: (locked || enabled) ? onTap : null,
+                  child: Center(child: content),
                 ),
               ),
             ),
-            if (plus && enabled)
+            if (plus && active)
               Positioned(
-                top: -5,
-                right: -5,
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2BB673),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+                top: -7,
+                right: -7,
+                child: GestureDetector(
+                  onTap: onPlus,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2BB673),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.add, size: 15, color: Colors.white),
                   ),
-                  child: const Icon(Icons.add, size: 13, color: Colors.white),
                 ),
               ),
           ],
@@ -683,6 +869,181 @@ class _CoinChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Premium "Out of Lives" dialog: a broken-heart badge, and two clear choices —
+/// watch a video to refill hearts and keep going, or restart the level.
+class _FailDialog extends StatelessWidget {
+  const _FailDialog({required this.onWatchVideo, required this.onRestart});
+
+  final VoidCallback onWatchVideo;
+  final VoidCallback onRestart;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      child: TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 340),
+        curve: Curves.easeOutBack,
+        tween: Tween(begin: 0.8, end: 1.0),
+        builder: (context, scale, child) =>
+            Transform.scale(scale: scale, child: child),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 30,
+                offset: const Offset(0, 14),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Broken-heart badge with a warm red glow.
+              Container(
+                width: 86,
+                height: 86,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFEE4B4B).withValues(alpha: 0.5),
+                      blurRadius: 22,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.heart_broken_rounded,
+                    color: Colors.white, size: 46),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Out of Lives',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: palette.arrow,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Watch a short video to refill your hearts and keep your '
+                'progress — or start the level over.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: palette.textMuted,
+                  height: 1.35,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Watch & Continue — chunky 3D gradient button with a video glyph.
+              _FailButton(
+                colors: const [Color(0xFF3FD17A), Color(0xFF27A35A)],
+                icon: Icons.smart_display_rounded,
+                label: 'Watch & Continue',
+                onTap: onWatchVideo,
+              ),
+              const SizedBox(height: 10),
+              // Restart — quieter secondary action.
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: TextButton.icon(
+                  onPressed: onRestart,
+                  icon: Icon(Icons.refresh_rounded, color: palette.textMuted),
+                  label: Text(
+                    'Restart',
+                    style: TextStyle(
+                      color: palette.textMuted,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A chunky 3D-style gradient action button (matches the booster popup).
+class _FailButton extends StatelessWidget {
+  const _FailButton({
+    required this.colors,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final List<Color> colors;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(color: colors.last, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: colors.last.withValues(alpha: 0.4),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: SizedBox(
+            height: 58,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 24),
+                const SizedBox(width: 10),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

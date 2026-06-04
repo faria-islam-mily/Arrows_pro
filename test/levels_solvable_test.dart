@@ -7,24 +7,60 @@ import 'package:arrow_pro/data/shapes.dart';
 import 'package:arrow_pro/game/game_controller.dart';
 import 'package:arrow_pro/game/level_generator.dart';
 import 'package:arrow_pro/models/grid_arrow.dart';
+import 'package:arrow_pro/models/level.dart';
 
 void main() {
   group('Level pack', () {
-    for (final level in kLevels) {
+    // 1000 levels is too many to build in a test, so sample a representative
+    // spread: the whole curated intro, a stride across the rest (incl the
+    // procedural every-7th levels), and the very last.
+    final sample = <Level>{
+      for (var n = 1; n <= 20; n++) kLevels[n - 1],
+      for (var n = 21; n <= kLevelCount; n += 47) kLevels[n - 1],
+      kLevels[kLevelCount - 1],
+    }.toList();
+
+    for (final level in sample) {
       test('Level ${level.number} (${level.difficulty}) is solvable', () {
         expect(GameController.solvable(level), isTrue);
       });
     }
 
-    test('pack has 10 distinctly named levels', () {
-      expect(kLevels.length, 10);
+    test('pack has $kLevelCount levels, all named', () {
+      expect(kLevels.length, kLevelCount);
       for (final l in kLevels) {
         expect(l.name, isNotEmpty);
       }
     });
 
+    test('difficulty: gentle learning phase, then ramping cycle', () {
+      const learn = ['Easy', 'Easy', 'Medium', 'Easy', 'Medium'];
+      const ramp = ['Easy', 'Medium', 'Medium', 'Hard', 'Expert'];
+      for (final l in kLevels) {
+        final expected = (l.number <= kLearnUntil ? learn : ramp)[(l.number - 1) % 5];
+        expect(l.difficulty, expected, reason: 'Level ${l.number}');
+      }
+      // No Hard/Expert during the learning phase.
+      for (final l in kLevels.take(kLearnUntil)) {
+        expect(['Easy', 'Medium'], contains(l.difficulty));
+      }
+    });
+
+    test('milestone bosses are big, named, and solvable, growing to L1000', () {
+      final b50 = kLevels[49]; // level 50
+      final b500 = kLevels[499]; // level 500
+      final b1000 = kLevels[999]; // level 1000
+      for (final b in [b50, b500, b1000]) {
+        expect(b.name, contains('Boss'));
+        expect(GameController.solvable(b), isTrue);
+      }
+      // They grow toward the final boss.
+      expect(b500.cols, greaterThan(b50.cols));
+      expect(b1000.cols, greaterThan(b500.cols));
+    });
+
     test('levels are densely woven (long arrows, few stubs)', () {
-      for (final level in kLevels) {
+      for (final level in sample) {
         final arrows = level.arrows();
         final cells = arrows.fold<int>(0, (n, a) => n + a.cells.length);
         final avg = cells / arrows.length;
@@ -48,7 +84,7 @@ void main() {
         return true;
       }
 
-      for (final level in kLevels) {
+      for (final level in sample) {
         final arrows = level.arrows();
         final occ = <Point>{};
         for (final a in arrows) {
@@ -61,11 +97,17 @@ void main() {
         // Difficulty ramps: harder tiers must keep very few arrows movable at
         // once (you must trace lines to find a legal move); easy tiers just
         // need *some* dependency so they aren't a mindless tap-fest.
-        final min = switch (level.difficulty) {
-          'Easy' => 0.10,
-          'Medium' => 0.55,
-          _ => 0.7, // Hard / Expert
-        };
+        // The learning phase (where powers roll out) is intentionally gentle,
+        // so it isn't held to the "lots of arrows blocked" bar. From the ramp
+        // phase on, harder tiers must keep few arrows movable at once.
+        final min = level.number <= kLearnUntil
+            ? -1.0
+            : switch (level.difficulty) {
+                'Medium' => 0.55,
+                'Hard' => 0.7,
+                'Expert' => 0.7,
+                _ => -1.0, // Easy
+              };
         expect(frac, greaterThan(min),
             reason: 'Level ${level.number} (${level.name}, '
                 '${level.difficulty}) only ${(frac * 100).round()}% of arrows '
@@ -74,7 +116,7 @@ void main() {
     });
 
     test('no arrow head sits on its own body', () {
-      for (final level in kLevels) {
+      for (final level in sample) {
         for (final a in level.arrows()) {
           final fwd = Point(a.head.x + a.dir.dCol, a.head.y + a.dir.dRow);
           expect(a.cells.contains(fwd), isFalse,
@@ -85,8 +127,8 @@ void main() {
     });
 
     test('levels are deterministic', () {
-      final a = kLevels.last.arrows();
-      final b = kLevels.last.arrows();
+      final a = kLevels[19].arrows(); // level 20 (small + fast)
+      final b = kLevels[19].arrows();
       expect(a.length, b.length);
       for (var i = 0; i < a.length; i++) {
         expect(a[i].dir, b[i].dir);

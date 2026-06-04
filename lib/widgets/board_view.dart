@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -51,13 +50,26 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
   final TransformationController _tc = TransformationController();
   bool _didCenter = false; // center the board once on first layout
 
-  int? _blockedId; // arrow flashing red after a blocked tap
-  Timer? _blockTimer;
+  int? _blockedId; // arrow currently doing the "blocked" lunge
+  int _blockedGap = 0; // clear cells between its head and the blocker ahead
+  late final AnimationController _blockCtrl;
   bool _eraserArmed = false; // next tapped arrow is erased even if blocked
+  int? _previewId; // arrow being long-pressed (shows its exit guide line)
 
   @override
   void initState() {
     super.initState();
+    // Drives the blocked-arrow lunge: forward into the blocker, then recoil.
+    _blockCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+    )
+      ..addListener(() => setState(() {}))
+      ..addStatusListener((s) {
+        if (s == AnimationStatus.completed && mounted) {
+          setState(() => _blockedId = null);
+        }
+      });
     _bindActions();
   }
 
@@ -105,14 +117,40 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
       widget.game.tap(a); // marks removed + notifies (progress/win)
       _startExit(a);
     } else {
-      // Blocked: flash the arrow red and tell the parent to drop a life.
+      // Blocked: lunge the arrow forward into the blocker, recoil, flash red,
+      // buzz (heavyImpact via onBlocked), and drop a life.
+      _blockedGap = _gapToBlocker(a);
       setState(() => _blockedId = a.id);
       widget.onBlocked();
-      _blockTimer?.cancel();
-      _blockTimer = Timer(const Duration(milliseconds: 550), () {
-        if (mounted) setState(() => _blockedId = null);
-      });
+      _blockCtrl.forward(from: 0);
     }
+  }
+
+  /// Clear cells between [a]'s head and the first arrow blocking its straight
+  /// exit. Caps how far the lunge travels so it bumps the blocker rather than
+  /// sliding off into open space.
+  int _gapToBlocker(GridArrow a) {
+    var gap = 0;
+    var r = a.head.y + a.dir.dRow;
+    var c = a.head.x + a.dir.dCol;
+    while (r >= 0 && r < widget.game.rows && c >= 0 && c < widget.game.cols) {
+      final hit = widget.game.arrowAt(r, c);
+      if (hit != null && hit.id != a.id) break; // the blocker
+      gap++;
+      r += a.dir.dRow;
+      c += a.dir.dCol;
+    }
+    return gap;
+  }
+
+  /// Id of the arrow under a local board position, or null.
+  int? _arrowIdAt(Offset local, double cell, double margin) {
+    final col = ((local.dx - margin) / cell).floor();
+    final row = ((local.dy - margin) / cell).floor();
+    if (row < 0 || row >= widget.game.rows || col < 0 || col >= widget.game.cols) {
+      return null;
+    }
+    return widget.game.arrowAt(row, col)?.id;
   }
 
   void _startExit(GridArrow a) {
@@ -138,7 +176,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _blockTimer?.cancel();
+    _blockCtrl.dispose();
     _tc.dispose();
     for (final c in _controllers.values) {
       c.dispose();
@@ -213,6 +251,16 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
                 _handleTapCell(row, col);
               }
             },
+            // Long-press an arrow to preview its exit path (a guide line shows
+            // where it would travel). Dragging while held previews others.
+            onLongPressStart: (d) => setState(
+                () => _previewId = _arrowIdAt(d.localPosition, cell, margin)),
+            onLongPressMoveUpdate: (d) {
+              final id = _arrowIdAt(d.localPosition, cell, margin);
+              if (id != _previewId) setState(() => _previewId = id);
+            },
+            onLongPressEnd: (_) => setState(() => _previewId = null),
+            onLongPressCancel: () => setState(() => _previewId = null),
             child: CustomPaint(
               size: Size(w, h),
               painter: _BoardPainter(
@@ -221,6 +269,9 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
                 margin: margin,
                 hintId: widget.hintId,
                 blockedId: _blockedId,
+                blockedT: _blockCtrl.value,
+                blockedGap: _blockedGap,
+                previewId: _previewId,
                 color: palette.arrow,
                 hintColor: palette.arrowActive,
                 dotColor: palette.textMuted,
@@ -242,6 +293,9 @@ class _BoardPainter extends CustomPainter {
     required this.margin,
     required this.hintId,
     required this.blockedId,
+    required this.blockedT,
+    required this.blockedGap,
+    required this.previewId,
     required this.color,
     required this.hintColor,
     required this.dotColor,
@@ -256,6 +310,9 @@ class _BoardPainter extends CustomPainter {
   final double margin;
   final int? hintId;
   final int? blockedId;
+  final double blockedT; // 0..1 lunge progress for the blocked arrow
+  final int blockedGap; // clear cells ahead of the blocked arrow's head
+  final int? previewId; // long-pressed arrow showing its exit guide line
   final Color color;
   final Color hintColor;
   final Color dotColor;
@@ -327,9 +384,7 @@ class _BoardPainter extends CustomPainter {
   }
 
   /// Exit: the arrow **slithers out head-first along its own path**, then
-  /// straight off the board — like being pulled through a tube. Each point of
-  /// the body follows the route the head took, so bent arrows curl out
-  /// naturally instead of sliding sideways as a rigid shape.
+  /// straight off the board — like being pulled through a tube.
   void _drawExiting(Canvas canvas, GridArrow a, double t) {
     final dir = Offset(a.dir.dCol.toDouble(), a.dir.dRow.toDouble());
     final w = cell * game.cols + margin * 2;
@@ -339,22 +394,40 @@ class _BoardPainter extends CustomPainter {
     if (poly.length == 1) poly = [poly.first - dir * (cell * 0.5), poly.first];
     final head = poly.last;
 
-    // Distance the head must travel along [dir] to clear the nearest edge.
     final headToEdge = switch (a.dir) {
       ArrowDir.up => head.dy,
       ArrowDir.down => h - head.dy,
       ArrowDir.left => head.dx,
       ArrowDir.right => w - head.dx,
     };
+    var bodyLen = 0.0;
+    for (var i = 1; i < poly.length; i++) {
+      bodyLen += (poly[i] - poly[i - 1]).distance;
+    }
+    final rayLen = headToEdge + cell * 2;
+    final offset = (t * t) * (bodyLen + rayLen); // ease-in, accelerates out
+    final opacity = t < 0.82 ? 1.0 : (1 - (t - 0.82) / 0.18).clamp(0.0, 1.0);
 
-    // Travel curve = the body's own poly-line + a straight ray out past the head.
-    final curve = [...poly, head + dir * (headToEdge + cell * 2)];
+    _slither(canvas, a, offset, rayLen, color, opacity);
+  }
+
+  /// Draws [a]'s body advanced [offset] arc-length along its OWN poly-line (a
+  /// straight [rayLen] ray extends past the head to slide into). The body is
+  /// traced through every bend of the curve inside the moving window — so it
+  /// follows its own path faithfully and never cuts a corner while sliding.
+  /// A negative [offset] recoils it back along the same path.
+  void _slither(Canvas canvas, GridArrow a, double offset, double rayLen,
+      Color col, double opacity) {
+    final dir = Offset(a.dir.dCol.toDouble(), a.dir.dRow.toDouble());
+    var poly = a.cells.map((p) => _center(p)).toList();
+    if (poly.length == 1) poly = [poly.first - dir * (cell * 0.5), poly.first];
+    final head = poly.last;
+    final curve = [...poly, head + dir * rayLen];
     final cum = <double>[0];
     for (var i = 1; i < curve.length; i++) {
       cum.add(cum[i - 1] + (curve[i] - curve[i - 1]).distance);
     }
-    final origArc = cum.sublist(0, poly.length); // arc length of each body vertex
-    final bodyLen = origArc.last;
+    final bodyLen = cum[poly.length - 1];
 
     Offset along(double s) {
       s = s.clamp(0.0, cum.last);
@@ -368,14 +441,65 @@ class _BoardPainter extends CustomPainter {
       return curve.last;
     }
 
-    // Slide every body vertex forward along the curve by the same arc-length.
-    final maxOffset = bodyLen + headToEdge + cell * 2;
-    final offset = (t * t) * maxOffset; // ease-in: gentle start, accelerates out
-    final moved = [for (final s in origArc) along(s + offset)];
-    final opacity = t < 0.82 ? 1.0 : (1 - (t - 0.82) / 0.18).clamp(0.0, 1.0);
+    // The visible body spans arc [a0 (tail) .. a1 (head)]. Trace the curve
+    // through that window, KEEPING every bend vertex it passes through.
+    final a0 = offset.clamp(0.0, cum.last);
+    final a1 = (offset + bodyLen).clamp(0.0, cum.last);
+    final body = <Offset>[along(a0)];
+    for (var i = 0; i < curve.length; i++) {
+      if (cum[i] > a0 && cum[i] < a1) body.add(curve[i]);
+    }
+    body.add(along(a1));
 
-    _shaftThrough(canvas, moved, dir, color, opacity);
-    _headAt(canvas, moved.last, dir, color, opacity);
+    _shaftThrough(canvas, body, dir, col, opacity);
+    _headAt(canvas, body.last, dir, col, opacity);
+  }
+
+  /// Arc-length the blocked arrow advances forward along its own path at
+  /// [blockedT]: a quick lunge into the blocker, then a smooth retreat back
+  /// along the path to its rest position. Always >= 0 (it can't slide behind
+  /// its own tail), so the body never compresses — it just goes out and back.
+  double _blockedOffset() {
+    final t = blockedT;
+    if (t <= 0 || t >= 1) return 0;
+    // Travel up to the blocker (capped) plus a little press against it.
+    final maxF = (min(blockedGap, 2) + 0.42) * cell;
+    if (t < 0.32) {
+      return Curves.easeOut.transform(t / 0.32) * maxF; // lunge in
+    }
+    final u = (t - 0.32) / 0.68; // 0..1 retreat back to rest
+    return maxF * (1 - Curves.easeInOut.transform(u));
+  }
+
+  /// The blocked arrow: slithers head-first along its own path into the blocker
+  /// by [_blockedOffset] arc-length, then recoils back along it — drawn red.
+  void _drawBlocked(Canvas canvas, GridArrow a) {
+    final rayLen = (min(blockedGap, 2) + 1.2) * cell;
+    _slither(canvas, a, _blockedOffset(), rayLen, _blockedColor, 1.0);
+  }
+
+  /// Long-press guide: a thin line from [a]'s head straight out to the board
+  /// edge along its heading — shows where the arrow would travel.
+  void _drawGuide(Canvas canvas, GridArrow a) {
+    final dir = Offset(a.dir.dCol.toDouble(), a.dir.dRow.toDouble());
+    final head = _center(a.cells.last);
+    final w = cell * game.cols + margin * 2;
+    final h = cell * game.rows + margin * 2;
+    final toEdge = switch (a.dir) {
+      ArrowDir.up => head.dy,
+      ArrowDir.down => h - head.dy,
+      ArrowDir.left => head.dx,
+      ArrowDir.right => w - head.dx,
+    };
+    final end = head + dir * toEdge;
+    canvas.drawLine(
+      head,
+      end,
+      Paint()
+        ..color = hintColor.withValues(alpha: 0.55)
+        ..strokeWidth = (cell * 0.05).clamp(1.5, 4.0)
+        ..strokeCap = StrokeCap.round,
+    );
   }
 
   @override
@@ -389,30 +513,57 @@ class _BoardPainter extends CustomPainter {
       allCells.addAll(a.cells);
       if (!a.removed) occupied.addAll(a.cells);
     }
-    final dotPaint = Paint()..color = dotColor.withValues(alpha: 0.30);
-    final dotR = cell * 0.06;
+    // Crisp, clearly-visible dots (not a faint haze) — like the reference.
+    final dotPaint = Paint()..color = dotColor.withValues(alpha: 0.55);
+    final dotR = cell * 0.075;
     for (final c in allCells) {
       if (occupied.contains(c)) continue;
       canvas.drawCircle(_center(c), dotR, dotPaint);
     }
 
     // Active arrows: all shafts first, then all heads, so no arrow's body is
-    // ever painted over another arrow's head.
+    // ever painted over another arrow's head. The blocked arrow is skipped here
+    // and redrawn below with its lunge (it slithers along its own path).
+    final lunging = blockedId != null && blockedT > 0 && blockedT < 1;
     final draws = <(GridArrow, Color)>[];
     for (final a in game.arrows) {
       if (a.removed) continue;
+      if (lunging && a.id == blockedId) continue;
       final col = a.id == blockedId
           ? _blockedColor
-          : a.id == hintId
+          : (a.id == hintId || a.id == previewId)
               ? hintColor
               : color;
       draws.add((a, col));
     }
+
     for (final d in draws) {
       _drawShaft(canvas, d.$1, d.$2, 1.0, Offset.zero);
     }
     for (final d in draws) {
       _drawHead(canvas, d.$1, d.$2, 1.0, Offset.zero);
+    }
+
+    // Long-press preview: a thin guide line from the held arrow's head straight
+    // out to the board edge, on top so the whole path reads end-to-end.
+    if (previewId != null) {
+      for (final a in game.arrows) {
+        if (!a.removed && a.id == previewId) {
+          _drawGuide(canvas, a);
+          break;
+        }
+      }
+    }
+
+    // Blocked arrow: slither head-first along its own path into the blocker,
+    // then recoil back along that same path — like a failed exit.
+    if (lunging) {
+      for (final a in game.arrows) {
+        if (!a.removed && a.id == blockedId) {
+          _drawBlocked(canvas, a);
+          break;
+        }
+      }
     }
 
     // Escaping arrows slide on top, clipped to the board so they vanish exactly
