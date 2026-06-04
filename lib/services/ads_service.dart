@@ -1,0 +1,114 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+/// Initialises the Google Mobile Ads SDK and hands out the right banner ad-unit
+/// ID for the current platform / build mode.
+///
+/// In debug/profile we always serve Google's official **test** units so you can
+/// develop without risking your AdMob account. Release builds use your real
+/// units — fill in [_androidBanner] / [_iosBanner] below.
+class AdsService {
+  AdsService._();
+
+  static bool _inited = false;
+
+  /// Safe to call more than once; only the first call does the work.
+  static Future<void> init() async {
+    if (_inited) return;
+    _inited = true;
+    try {
+      await MobileAds.instance.initialize();
+    } catch (_) {
+      // Ads simply won't show (e.g. on an unsupported platform / no network).
+    }
+    loadRewarded(); // warm a rewarded ad for the first "Watch" tap
+  }
+
+  // ---- Rewarded video ----------------------------------------------------
+
+  static RewardedAd? _rewarded;
+  static bool _loadingRewarded = false;
+
+  /// Preload a rewarded ad (no-op if one is ready or already loading).
+  static void loadRewarded() {
+    if (_rewarded != null || _loadingRewarded) return;
+    _loadingRewarded = true;
+    RewardedAd.load(
+      adUnitId: rewardedUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewarded = ad;
+          _loadingRewarded = false;
+        },
+        onAdFailedToLoad: (_) {
+          _rewarded = null;
+          _loadingRewarded = false;
+        },
+      ),
+    );
+  }
+
+  /// Show a rewarded ad. Resolves true only if the user earned the reward.
+  /// If no ad is ready it kicks off a load and returns false immediately.
+  static Future<bool> showRewarded() async {
+    final ad = _rewarded;
+    if (ad == null) {
+      loadRewarded();
+      return false;
+    }
+    _rewarded = null;
+    final completer = Completer<bool>();
+    var earned = false;
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        loadRewarded();
+        if (!completer.isCompleted) completer.complete(earned);
+      },
+      onAdFailedToShowFullScreenContent: (ad, _) {
+        ad.dispose();
+        loadRewarded();
+        if (!completer.isCompleted) completer.complete(false);
+      },
+    );
+    ad.show(onUserEarnedReward: (_, __) => earned = true);
+    return completer.future;
+  }
+
+  static String get rewardedUnitId {
+    if (kReleaseMode) {
+      return Platform.isIOS ? _iosRewarded : _androidRewarded;
+    }
+    // Google's official sample rewarded units.
+    return Platform.isIOS
+        ? 'ca-app-pub-3940256099942544/1712485313'
+        : 'ca-app-pub-3940256099942544/5224354917';
+  }
+
+  /// The banner ad-unit ID to request, picked by platform and build mode.
+  static String get bannerUnitId {
+    if (kReleaseMode) {
+      return Platform.isIOS ? _iosBanner : _androidBanner;
+    }
+    // Google's official sample banner units — always fill, never billed.
+    return Platform.isIOS
+        ? 'ca-app-pub-3940256099942544/2934735716'
+        : 'ca-app-pub-3940256099942544/6300978111';
+  }
+
+  // TODO: replace these with your real AdMob banner ad-unit IDs from the AdMob
+  // console before shipping a release build. Also set the app-level AdMob app
+  // ID in AndroidManifest.xml (meta-data) and ios/Runner/Info.plist
+  // (GADApplicationIdentifier).
+  static const String _androidBanner =
+      'ca-app-pub-0000000000000000/0000000000';
+  static const String _iosBanner = 'ca-app-pub-0000000000000000/0000000000';
+  static const String _androidRewarded =
+      'ca-app-pub-0000000000000000/0000000000';
+  static const String _iosRewarded =
+      'ca-app-pub-0000000000000000/0000000000';
+}

@@ -6,10 +6,14 @@ import '../data/levels.dart';
 import '../game/game_controller.dart';
 import '../models/level.dart';
 import '../models/power_up.dart';
+import '../services/ads_service.dart';
 import '../services/feedback_service.dart';
 import '../state/app_scope.dart';
+import '../widgets/ad_banner.dart';
+import '../widgets/app_image.dart';
 import '../widgets/board_view.dart';
 import '../widgets/booster_sheet.dart';
+import '../widgets/game_dialogs.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/power_intro_overlay.dart';
 import '../widgets/level_thumbnail.dart';
@@ -276,19 +280,23 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _showFail() {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _FailDialog(
-        onWatchVideo: () {
+    showLevelFailed(
+      context,
+      onContinue: () async {
+        final earned = await AdsService.showRewarded();
+        if (!mounted) return;
+        if (earned) {
           Navigator.of(context).pop();
           _continueWithVideo();
-        },
-        onRestart: () {
-          Navigator.of(context).pop();
-          _restart();
-        },
-      ),
+        } else {
+          _toast('Ad not ready yet — try again in a moment.');
+        }
+      },
+      onReplay: () {
+        Navigator.of(context).pop();
+        AppScope.read(context).loseLife(); // failing the level costs a life
+        _restart();
+      },
     );
   }
 
@@ -318,6 +326,7 @@ class _GameScreenState extends State<GameScreen>
       final lv = st.powerUnlockLevel(p);
       return _PowerButton(
         icon: icon,
+        power: p,
         colors: colors,
         locked: true,
         unlockLevel: lv,
@@ -326,6 +335,7 @@ class _GameScreenState extends State<GameScreen>
     }
     return _PowerButton(
       icon: icon,
+      power: p,
       colors: colors,
       count: st.powerCount(p),
       plus: true,
@@ -469,60 +479,68 @@ class _GameScreenState extends State<GameScreen>
               ),
             ),
 
-          // Bottom power-up bar — four grounded square cards.
+          // Bottom power-up bar — four grounded square cards — with the ad
+          // banner grounded beneath it (collapses when ads are removed).
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _powerTile(
-                        PowerUp.hint,
-                        Icons.lightbulb_rounded,
-                        const [Color(0xFFFFC83D), Color(0xFFF4A100)],
-                        _useHint,
-                        () => showHintBoosterSheet(context),
-                      ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SafeArea(
+                  top: false,
+                  bottom: state.adsRemoved,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _powerTile(
+                            PowerUp.hint,
+                            Icons.lightbulb_rounded,
+                            const [Color(0xFFFFC83D), Color(0xFFF4A100)],
+                            _useHint,
+                            () => showHintBoosterSheet(context),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _powerTile(
+                            PowerUp.eraser,
+                            Icons.cleaning_services_rounded,
+                            const [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
+                            _useEraser,
+                            () => showEraserBoosterSheet(context),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _powerTile(
+                            PowerUp.magic,
+                            Icons.auto_awesome_rounded,
+                            const [Color(0xFF8E8EF6), Color(0xFF4E5DF2)],
+                            _useMagic,
+                            () => showMagicBoosterSheet(context),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _powerTile(
+                            PowerUp.undo,
+                            Icons.undo_rounded,
+                            const [Color(0xFF36C58E), Color(0xFF1E9E8A)],
+                            _useUndo,
+                            () => showUndoBoosterSheet(context),
+                            actionEnabled: _game.canUndo,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _powerTile(
-                        PowerUp.eraser,
-                        Icons.cleaning_services_rounded,
-                        const [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
-                        _useEraser,
-                        () => showEraserBoosterSheet(context),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _powerTile(
-                        PowerUp.magic,
-                        Icons.auto_awesome_rounded,
-                        const [Color(0xFF8E8EF6), Color(0xFF4E5DF2)],
-                        _useMagic,
-                        () => showMagicBoosterSheet(context),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _powerTile(
-                        PowerUp.undo,
-                        Icons.undo_rounded,
-                        const [Color(0xFF36C58E), Color(0xFF1E9E8A)],
-                        _useUndo,
-                        () => showUndoBoosterSheet(context),
-                        actionEnabled: _game.canUndo,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                const AdBanner(),
+              ],
             ),
           ),
 
@@ -708,6 +726,7 @@ class _PowerButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.colors,
+    this.power,
     this.count,
     this.plus = false,
     this.onPlus,
@@ -717,6 +736,7 @@ class _PowerButton extends StatelessWidget {
   });
 
   final IconData icon;
+  final PowerUp? power;
   final VoidCallback onTap;
   final List<Color> colors;
   final int? count;
@@ -751,7 +771,9 @@ class _PowerButton extends StatelessWidget {
       content = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 26, color: Colors.white),
+          power != null
+              ? PowerIcon(power!, size: 26)
+              : Icon(icon, size: 26, color: Colors.white),
           if (chip != null) ...[const SizedBox(height: 5), chip],
         ],
       );
@@ -874,177 +896,3 @@ class _CoinChip extends StatelessWidget {
   }
 }
 
-/// Premium "Out of Lives" dialog: a broken-heart badge, and two clear choices —
-/// watch a video to refill hearts and keep going, or restart the level.
-class _FailDialog extends StatelessWidget {
-  const _FailDialog({required this.onWatchVideo, required this.onRestart});
-
-  final VoidCallback onWatchVideo;
-  final VoidCallback onRestart;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-      child: TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 340),
-        curve: Curves.easeOutBack,
-        tween: Tween(begin: 0.8, end: 1.0),
-        builder: (context, scale, child) =>
-            Transform.scale(scale: scale, child: child),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
-          decoration: BoxDecoration(
-            color: palette.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 30,
-                offset: const Offset(0, 14),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Broken-heart badge with a warm red glow.
-              Container(
-                width: 86,
-                height: 86,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFF7A7A), Color(0xFFEE4B4B)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFEE4B4B).withValues(alpha: 0.5),
-                      blurRadius: 22,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.heart_broken_rounded,
-                    color: Colors.white, size: 46),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Out of Lives',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: palette.arrow,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Watch a short video to refill your hearts and keep your '
-                'progress — or start the level over.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: palette.textMuted,
-                  height: 1.35,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Watch & Continue — chunky 3D gradient button with a video glyph.
-              _FailButton(
-                colors: const [Color(0xFF3FD17A), Color(0xFF27A35A)],
-                icon: Icons.smart_display_rounded,
-                label: 'Watch & Continue',
-                onTap: onWatchVideo,
-              ),
-              const SizedBox(height: 10),
-              // Restart — quieter secondary action.
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: TextButton.icon(
-                  onPressed: onRestart,
-                  icon: Icon(Icons.refresh_rounded, color: palette.textMuted),
-                  label: Text(
-                    'Restart',
-                    style: TextStyle(
-                      color: palette.textMuted,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A chunky 3D-style gradient action button (matches the booster popup).
-class _FailButton extends StatelessWidget {
-  const _FailButton({
-    required this.colors,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final List<Color> colors;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(color: colors.last, offset: const Offset(0, 4)),
-          BoxShadow(
-            color: colors.last.withValues(alpha: 0.4),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: SizedBox(
-            height: 58,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: Colors.white, size: 24),
-                const SizedBox(width: 10),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

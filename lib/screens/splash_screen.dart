@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../state/app_scope.dart';
-import 'home_screen.dart';
+import 'main_scaffold.dart';
 
 /// Animated opening screen: the logo eases in, then a mindful quote fades up,
 /// before auto-advancing to Home. Tap anywhere to skip.
@@ -43,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 450),
-        pageBuilder: (_, __, ___) => const HomeScreen(),
+        pageBuilder: (_, __, ___) => const MainScaffold(),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
       ),

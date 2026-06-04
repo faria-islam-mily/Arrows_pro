@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../data/daily_rewards.dart';
+import '../data/levels.dart';
 import '../models/power_up.dart';
 import 'storage.dart';
 
@@ -29,6 +30,11 @@ class AppState extends ChangeNotifier {
   static const _kRewardDay = 'rewardDay';
   static const _kRewardClaimed = 'rewardClaimedDate';
   static const _kRewardCycle = 'rewardCycle';
+  static const _kLives = 'lives';
+  static const _kNextLife = 'nextLifeMs';
+  static const _kInfinite = 'infiniteUntilMs';
+  static const _kStarsTotal = 'starsTotal';
+  static const _kPiggy = 'piggyCoins';
 
   int _themeIndex = 0;
   int _unlockedLevel = 1; // highest level number the player may open
@@ -53,6 +59,21 @@ class AppState extends ChangeNotifier {
   String? _rewardClaimed; // yyyy-mm-dd of the last daily-reward claim
   int _rewardCycle = 0; // which weekly reward table is active (advances weekly)
   final Set<PowerUp> _seenIntros = {}; // power intros already shown
+
+  // ---- Lives: a global, regenerating "energy" pool shared across the app ----
+  static const int kMaxLives = 5;
+  static const Duration kLifeRegen = Duration(minutes: 30);
+  int _lives = kMaxLives;
+  int _nextLifeMs = 0; // epoch ms when the next life regenerates (0 = full)
+  int _infiniteUntilMs = 0; // epoch ms until infinite lives expire (0 = none)
+  int _starsTotal = 0; // cached sum of best stars across all levels
+
+  // ---- Piggy bank: coins accumulate here as you beat levels; "break" it to
+  // collect them all at once (a coin sink / monetization hook). ----
+  static const int kPiggyCap = 3500;
+  static const int kPiggyBreakMin = 500; // minimum before it can be broken
+  static const int kPiggyPerLevel = 50; // coins added per level cleared
+  int _piggyCoins = 0;
 
   /// The level at which each power is introduced (gradual rollout).
   static const Map<PowerUp, int> _unlockLevel = {
@@ -90,6 +111,138 @@ class AppState extends ChangeNotifier {
   int get coins => _coins;
   int get hints => _hints;
   int get rewardCycle => _rewardCycle;
+  int get starTotal => _starsTotal;
+  int get piggyCoins => _piggyCoins;
+  bool get canBreakPiggy => _piggyCoins >= kPiggyBreakMin;
+
+  /// Add coins to the piggy bank (capped).
+  Future<void> addToPiggy(int n) async {
+    if (n <= 0) return;
+    _piggyCoins = (_piggyCoins + n).clamp(0, kPiggyCap);
+    notifyListeners();
+    await _storage.setInt(_kPiggy, _piggyCoins);
+  }
+
+  /// Smash the piggy: move all its coins into the spendable balance and reset.
+  /// Returns the amount collected.
+  Future<int> breakPiggy() async {
+    final amount = _piggyCoins;
+    if (amount <= 0) return 0;
+    _piggyCoins = 0;
+    _coins += amount;
+    notifyListeners();
+    await _storage.setInt(_kPiggy, 0);
+    await _storage.setInt(_kCoins, _coins);
+    return amount;
+  }
+
+  // ---- Lives API ----------------------------------------------------------
+
+  /// True while a timed "infinite lives" bundle is active.
+  bool get hasInfiniteLives =>
+      _infiniteUntilMs > DateTime.now().millisecondsSinceEpoch;
+
+  /// Current playable lives (shows full while infinite is active). Pure — never
+  /// mutates state, so it is safe to read during build. [tick] persists regen.
+  int get lives => hasInfiniteLives ? kMaxLives : _effectiveLives();
+
+  /// Whether the player may start a level right now.
+  bool get canPlay => hasInfiniteLives || lives > 0;
+
+  int _effectiveLives() {
+    if (_lives >= kMaxLives || _nextLifeMs == 0) {
+      return _lives.clamp(0, kMaxLives);
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var n = _lives;
+    var next = _nextLifeMs;
+    while (n < kMaxLives && next != 0 && now >= next) {
+      n++;
+      next += kLifeRegen.inMilliseconds;
+    }
+    return n.clamp(0, kMaxLives);
+  }
+
+  /// Time until the next life regenerates, or null when full / infinite.
+  Duration? get timeToNextLife {
+    if (hasInfiniteLives) return null;
+    if (_effectiveLives() >= kMaxLives || _nextLifeMs == 0) return null;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var next = _nextLifeMs;
+    while (next != 0 && now >= next) {
+      next += kLifeRegen.inMilliseconds;
+    }
+    final ms = next - now;
+    return ms > 0 ? Duration(milliseconds: ms) : Duration.zero;
+  }
+
+  /// Time left on the active infinite-lives bundle, or null if none.
+  Duration? get infiniteRemaining {
+    if (!hasInfiniteLives) return null;
+    return Duration(
+        milliseconds: _infiniteUntilMs - DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// Called ~once a second by the HUD ticker: bank any lives that regenerated
+  /// and persist them. The per-second countdown itself is computed live by the
+  /// HUD from [timeToNextLife]; this only fires storage writes when a whole
+  /// life actually arrives.
+  void tick() {
+    if (hasInfiniteLives) return;
+    final eff = _effectiveLives();
+    if (eff == _lives) return;
+    _lives = eff;
+    if (_lives >= kMaxLives) {
+      _nextLifeMs = 0;
+    } else {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      while (_nextLifeMs != 0 && now >= _nextLifeMs && _lives < kMaxLives) {
+        _nextLifeMs += kLifeRegen.inMilliseconds;
+      }
+    }
+    _storage.setInt(_kLives, _lives);
+    _storage.setInt(_kNextLife, _nextLifeMs);
+    notifyListeners();
+  }
+
+  /// Spend one life (on a level fail). Starts the regen clock if we were full.
+  Future<void> loseLife() async {
+    if (hasInfiniteLives) return;
+    _lives = _effectiveLives();
+    if (_lives >= kMaxLives || _nextLifeMs == 0) {
+      _nextLifeMs =
+          DateTime.now().millisecondsSinceEpoch + kLifeRegen.inMilliseconds;
+    }
+    _lives = (_lives - 1).clamp(0, kMaxLives);
+    notifyListeners();
+    await _storage.setInt(_kLives, _lives);
+    await _storage.setInt(_kNextLife, _nextLifeMs);
+  }
+
+  /// Grant [n] lives (refill / purchase / reward), capped at the max.
+  Future<void> addLives(int n) async {
+    _lives = (_effectiveLives() + n).clamp(0, kMaxLives);
+    if (_lives >= kMaxLives) {
+      _nextLifeMs = 0;
+    } else if (_nextLifeMs == 0) {
+      _nextLifeMs =
+          DateTime.now().millisecondsSinceEpoch + kLifeRegen.inMilliseconds;
+    }
+    notifyListeners();
+    await _storage.setInt(_kLives, _lives);
+    await _storage.setInt(_kNextLife, _nextLifeMs);
+  }
+
+  Future<void> refillLives() => addLives(kMaxLives);
+
+  /// Start (or extend) a timed infinite-lives bundle.
+  Future<void> grantInfiniteLives(Duration d) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final base = hasInfiniteLives ? _infiniteUntilMs : now;
+    _infiniteUntilMs = base + d.inMilliseconds;
+    notifyListeners();
+    await _storage.setInt(_kInfinite, _infiniteUntilMs);
+  }
 
   /// Owned count of a given power-up.
   int powerCount(PowerUp p) => switch (p) {
@@ -190,6 +343,16 @@ class AppState extends ChangeNotifier {
     for (final p in PowerUp.values) {
       if (_storage.getBool('intro_${p.storageKey}', false)) _seenIntros.add(p);
     }
+    _lives = _storage.getInt(_kLives, kMaxLives);
+    _nextLifeMs = _storage.getInt(_kNextLife, 0);
+    _infiniteUntilMs = _storage.getInt(_kInfinite, 0);
+    _piggyCoins = _storage.getInt(_kPiggy, 0);
+    // Star total is cached; on first run (or upgrade) seed it by summing once.
+    _starsTotal = _storage.getInt(_kStarsTotal, -1);
+    if (_starsTotal < 0) {
+      _starsTotal = totalStars(kLevelCount);
+      _storage.setInt(_kStarsTotal, _starsTotal);
+    }
   }
 
   Future<void> addCoins(int n) async {
@@ -281,11 +444,15 @@ class AppState extends ChangeNotifier {
     await _storage.setBool(_kAdsRemoved, true);
   }
 
-  /// Record a star rating for a level, keeping the best result.
+  /// Record a star rating for a level, keeping the best result. Also keeps the
+  /// cached [starTotal] in sync by adding only the improvement.
   Future<void> recordStars(int levelNumber, int stars) async {
     final clamped = stars.clamp(0, 3);
-    if (clamped <= starsFor(levelNumber)) return;
+    final prev = starsFor(levelNumber);
+    if (clamped <= prev) return;
     await _storage.setInt('stars_$levelNumber', clamped);
+    _starsTotal += clamped - prev;
+    await _storage.setInt(_kStarsTotal, _starsTotal);
     notifyListeners();
   }
 
@@ -295,6 +462,9 @@ class AppState extends ChangeNotifier {
     if (levelNumber + 1 > _unlockedLevel) {
       _unlockedLevel = levelNumber + 1;
       await _storage.setInt(_kUnlocked, _unlockedLevel);
+      // First clear of a new level drops some coins into the piggy bank.
+      _piggyCoins = (_piggyCoins + kPiggyPerLevel).clamp(0, kPiggyCap);
+      await _storage.setInt(_kPiggy, _piggyCoins);
       changed = true;
     }
     changed = await _bumpStreak() || changed;

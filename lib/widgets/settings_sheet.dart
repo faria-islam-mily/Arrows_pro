@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/audio_service.dart';
+import '../services/iap_service.dart';
 import '../state/app_scope.dart';
+import 'purchase_dialogs.dart';
 
 /// Bottom sheet with Sound / Vibration / Music toggles, plus an optional
 /// Restart action (pass [onRestart] from the game screen). Mirrors the look of
@@ -79,6 +81,32 @@ class _SettingsBody extends StatelessWidget {
                 onTap: () {
                   Navigator.of(context).pop();
                   onTheme!();
+                },
+              ),
+            ],
+            if (!state.adsRemoved) ...[
+              const SizedBox(height: 8),
+              _ActionTile(
+                icon: Icons.block_rounded,
+                label: 'Remove ads',
+                // Don't pop first — buyRemoveAds awaits and checks
+                // context.mounted; the processing/result dialogs render above
+                // the sheet via the root navigator, and this tile auto-hides
+                // once removeAds() notifies.
+                onTap: () => buyRemoveAds(context),
+              ),
+              const SizedBox(height: 8),
+              _ActionTile(
+                icon: Icons.restore_rounded,
+                label: 'Restore purchases',
+                onTap: () {
+                  IapService.instance.restore();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Restoring your purchases…'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
                 },
               ),
             ],

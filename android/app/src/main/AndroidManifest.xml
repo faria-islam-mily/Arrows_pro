@@ -1,8 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Ads need network access; release manifests don't get INTERNET for free. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Google Play Billing for in-app purchases. -->
+    <uses-permission android:name="com.android.vending.BILLING"/>
     <application
         android:label="arrow_pro"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- AdMob app ID. This is Google's official SAMPLE app ID — replace it
+             with your real one from the AdMob console before release. Must match
+             the GADApplicationIdentifier in ios/Runner/Info.plist. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
