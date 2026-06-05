@@ -6,8 +6,7 @@ import '../theme/game_colors.dart';
 import '../widgets/daily_reward_sheet.dart';
 import '../widgets/level_map.dart';
 import '../widgets/profile_dialogs.dart';
-import '../widgets/settings_sheet.dart';
-import '../widgets/theme_picker.dart';
+import '../widgets/settings_dialog.dart';
 import '../widgets/top_hud.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -62,10 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onCoins: openShop,
                 onLives: openShop,
                 onProfile: () => showProfileDialog(context),
-                onSettings: () => showSettingsSheet(
-                  context,
-                  onTheme: () => showThemePicker(context),
-                ),
+                onSettings: () => showSettingsDialog(context),
               ),
             ),
           ),

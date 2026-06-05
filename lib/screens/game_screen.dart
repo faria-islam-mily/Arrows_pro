@@ -17,8 +17,7 @@ import '../widgets/game_dialogs.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/power_intro_overlay.dart';
 import '../widgets/level_thumbnail.dart';
-import '../widgets/settings_sheet.dart';
-import '../widgets/theme_picker.dart';
+import '../widgets/settings_dialog.dart';
 import '../widgets/tutorial_overlay.dart';
 
 class GameScreen extends StatefulWidget {
@@ -87,10 +86,40 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  void _replayTutorial() => setState(() {
-        _showTutorial = true;
-        _hintId = _game.hintArrowId();
-      });
+  // Leaving a level mid-play costs a life — confirm first (unless infinite).
+  void _confirmRestart() {
+    final state = AppScope.read(context);
+    if (state.hasInfiniteLives) {
+      _restart();
+      return;
+    }
+    showQuitConfirm(
+      context,
+      title: 'Restart?',
+      confirmIcon: Icons.refresh_rounded,
+      onConfirm: () {
+        state.loseLife();
+        _restart();
+      },
+    );
+  }
+
+  void _confirmHome() {
+    final state = AppScope.read(context);
+    if (state.hasInfiniteLives) {
+      Navigator.of(context).pop();
+      return;
+    }
+    showQuitConfirm(
+      context,
+      title: 'Quit Game',
+      confirmIcon: Icons.home_rounded,
+      onConfirm: () {
+        state.loseLife();
+        Navigator.of(context).pop();
+      },
+    );
+  }
 
   void _onChange() {
     // A successful tap reduces the remaining count; play the success feel.
@@ -428,14 +457,13 @@ class _GameScreenState extends State<GameScreen>
                         ),
                         _CoinChip(coins: coins),
                         IconButton(
-                          tooltip: 'Settings',
-                          onPressed: () => showSettingsSheet(
+                          tooltip: 'Pause',
+                          onPressed: () => showPauseDialog(
                             context,
-                            onRestart: _restart,
-                            onHowToPlay: _replayTutorial,
-                            onTheme: () => showThemePicker(context),
+                            onRestart: _confirmRestart,
+                            onHome: _confirmHome,
                           ),
-                          icon: Icon(Icons.settings_outlined,
+                          icon: Icon(Icons.pause_circle_outline_rounded,
                               color: palette.arrow),
                         ),
                       ],

@@ -209,7 +209,7 @@ class _ReplayCoinButton extends StatelessWidget {
     return ChunkyButton(
       color: GameColors.green,
       depth: 6,
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       onTap: onTap,
       child: const Column(
         mainAxisSize: MainAxisSize.min,
@@ -246,11 +246,15 @@ class _ReplayFreeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
+      // passthrough so the button fills the Expanded width (it's the
+      // non-positioned child); otherwise the Stack hands it loose constraints
+      // and it shrinks to its content.
+      fit: StackFit.passthrough,
       children: [
         ChunkyButton(
           color: const Color(0xFFF2A33C),
           depth: 6,
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           onTap: onTap,
           child: const Column(
             mainAxisSize: MainAxisSize.min,
@@ -269,21 +273,27 @@ class _ReplayFreeButton extends StatelessWidget {
             ],
           ),
         ),
-        // -1 life badge.
+        // -1 life badge, tucked at the top-right corner clear of the text.
         Positioned(
-          top: -8,
-          left: -4,
+          top: -10,
+          right: 6,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
             decoration: BoxDecoration(
               color: GameColors.heart,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1)),
+              ],
             ),
             child: const Text('-1',
                 style: TextStyle(
                     color: Colors.white,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900)),
           ),
         ),

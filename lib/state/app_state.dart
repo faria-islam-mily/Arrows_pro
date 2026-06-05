@@ -23,6 +23,7 @@ class AppState extends ChangeNotifier {
   static const _kSound = 'soundOn';
   static const _kVibration = 'vibrationOn';
   static const _kMusic = 'musicOn';
+  static const _kNotifications = 'notificationsOn';
   static const _kTutorialSeen = 'tutorialSeen';
   static const _kDailyDone = 'dailyDoneDate';
   static const _kCoins = 'coins';
@@ -49,6 +50,7 @@ class AppState extends ChangeNotifier {
   bool _soundOn = true;
   bool _vibrationOn = true;
   bool _musicOn = true;
+  bool _notificationsOn = true;
   bool _tutorialSeen = false;
   String? _dailyDone; // yyyy-mm-dd the daily challenge was last completed
 
@@ -117,6 +119,7 @@ class AppState extends ChangeNotifier {
   bool get soundOn => _soundOn;
   bool get vibrationOn => _vibrationOn;
   bool get musicOn => _musicOn;
+  bool get notificationsOn => _notificationsOn;
   bool get tutorialSeen => _tutorialSeen;
   int get coins => _coins;
   int get hints => _hints;
@@ -372,6 +375,7 @@ class AppState extends ChangeNotifier {
     _soundOn = _storage.getBool(_kSound, true);
     _vibrationOn = _storage.getBool(_kVibration, true);
     _musicOn = _storage.getBool(_kMusic, true);
+    _notificationsOn = _storage.getBool(_kNotifications, true);
     _tutorialSeen = _storage.getBool(_kTutorialSeen, false);
     _dailyDone = _storage.getString(_kDailyDone);
     _coins = _storage.getInt(_kCoins, 0);
@@ -474,6 +478,12 @@ class AppState extends ChangeNotifier {
     _musicOn = on;
     notifyListeners();
     await _storage.setBool(_kMusic, on);
+  }
+
+  Future<void> setNotifications(bool on) async {
+    _notificationsOn = on;
+    notifyListeners();
+    await _storage.setBool(_kNotifications, on);
   }
 
   Future<void> markTutorialSeen() async {
