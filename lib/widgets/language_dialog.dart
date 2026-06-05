@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../state/app_scope.dart';
 import '../theme/game_colors.dart';
 import 'ui_kit.dart';
@@ -75,9 +76,9 @@ class _LanguageDialogState extends State<_LanguageDialog> {
                           borderRadius:
                               BorderRadius.vertical(top: Radius.circular(26)),
                         ),
-                        child: const Text('Language',
+                        child: Text(context.l10n.language,
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 26,
                                 fontWeight: FontWeight.w900,
@@ -131,8 +132,8 @@ class _LanguageDialogState extends State<_LanguageDialog> {
                                     context.appState.setLanguage(_selected);
                                     Navigator.of(context).pop();
                                   },
-                                  child: const Text('SAVE',
-                                      style: TextStyle(
+                                  child: Text(context.l10n.save,
+                                      style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 24,
                                           fontWeight: FontWeight.w900,

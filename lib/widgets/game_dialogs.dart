@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../data/shop_catalog.dart';
+import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/ads_service.dart';
 import '../state/app_scope.dart';
@@ -733,7 +734,7 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
   // Step 0 — out of lives: two ways to keep playing from the same state.
   Widget _outOfLivesPanel() {
     return _card(
-      title: 'OUT OF LIVES',
+      title: context.l10n.outOfLives,
       headerColors: const [GameColors.headerBlue, GameColors.headerBlueDark],
       body: Column(
         mainAxisSize: MainAxisSize.min,
@@ -748,8 +749,9 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
             child: const _PulseHeart(size: 72),
           ),
           const SizedBox(height: 12),
-          const Text('GET MORE LIVES!',
-              style: TextStyle(
+          Text(context.l10n.getMoreLives,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
                   color: Colors.white,
                   fontSize: 22,
                   fontWeight: FontWeight.w900)),
@@ -760,8 +762,8 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
                 child: _ReviveTile(
                   color: GameColors.purple,
                   amount: '+1',
-                  action: 'GET',
-                  value: 'FREE',
+                  action: context.l10n.get,
+                  value: context.l10n.free,
                   video: true,
                   onTap: widget.onWatch,
                 ),
@@ -771,7 +773,7 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
                 child: _ReviveTile(
                   color: GameColors.green,
                   amount: '+3',
-                  action: 'GET',
+                  action: context.l10n.get,
                   value: '${widget.buyCost}',
                   coin: true,
                   onTap: widget.onBuy,
@@ -788,7 +790,7 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
   // confirm leaving (which costs the life).
   Widget _warningPanel() {
     return _card(
-      title: 'WAIT!',
+      title: context.l10n.wait,
       headerColors: const [Color(0xFFF2A33C), Color(0xFFD9822B)],
       body: Column(
         mainAxisSize: MainAxisSize.min,
@@ -796,9 +798,9 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
           const SizedBox(height: 4),
           const _PulseHeart(size: 64),
           const SizedBox(height: 12),
-          const Text('You’ll lose a life\nif you leave now!',
+          Text(context.l10n.youllLoseALife,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   height: 1.2,
@@ -812,19 +814,13 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
               radius: 16,
               padding: const EdgeInsets.symmetric(vertical: 14),
               onTap: () => setState(() => _step = 0),
-              child: const Text('GO BACK',
-                  style: TextStyle(
+              child: Text(context.l10n.goBack,
+                  style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w900)),
             ),
           ),
-          const SizedBox(height: 4),
-          const Text('Tap ✕ to leave anyway',
-              style: TextStyle(
-                  color: Color(0xFFAEB9D4),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -833,7 +829,7 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
   // Step 2 — level failed: a single big RESUME option, or X to the level map.
   Widget _failedPanel() {
     return _card(
-      title: 'LEVEL FAILED',
+      title: context.l10n.levelFailed,
       headerColors: const [Color(0xFFE85C5C), Color(0xFFC23B3B)],
       body: Column(
         mainAxisSize: MainAxisSize.min,
@@ -841,9 +837,9 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
           const SizedBox(height: 4),
           const _PulseHeart(size: 64),
           const SizedBox(height: 12),
-          const Text('Don’t give up —\ntry this level again!',
+          Text(context.l10n.tryAgain,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   height: 1.2,
@@ -860,13 +856,14 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
                 Navigator.of(context).pop();
                 widget.onResume();
               },
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.refresh_rounded, color: Colors.white, size: 24),
-                  SizedBox(width: 8),
-                  Text('RESUME',
-                      style: TextStyle(
+                  const Icon(Icons.refresh_rounded,
+                      color: Colors.white, size: 24),
+                  const SizedBox(width: 8),
+                  Text(context.l10n.resume,
+                      style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w900)),

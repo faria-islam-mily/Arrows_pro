@@ -79,6 +79,9 @@ class _TopHudState extends State<TopHud>
       lifeRight = t == null ? 'FULL' : _fmt(t);
     }
     final lifeLabel = state.hasInfiniteLives ? '∞' : '${state.lives}';
+    // Only invite "get more" when lives are actually regenerating — never on
+    // full or infinite (timeToNextLife is null in both those cases).
+    final showLivesPlus = state.timeToNextLife != null;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 4),
@@ -110,7 +113,8 @@ class _TopHudState extends State<TopHud>
             flex: 6,
             child: _HudPill(
               shine: _shine,
-              leading: _HeartWithNumber(size: _icon, number: lifeLabel),
+              leading: _HeartWithNumber(
+                  size: _icon, number: lifeLabel, showPlus: showLivesPlus),
               trailing: lifeRight,
               onTap: widget.onLives,
             ),
@@ -127,7 +131,7 @@ class _TopHudState extends State<TopHud>
             ),
           ),
           const SizedBox(width: 5),
-          _GearButton(shine: _shine, onTap: widget.onSettings),
+          _GearButton(onTap: widget.onSettings),
         ],
       ),
     );
@@ -396,9 +400,14 @@ class _CoinWithPlus extends StatelessWidget {
 /// A big heart with the life count drawn inside it and a green "+" badge — so,
 /// like the coin, tapping it clearly leads somewhere to get more.
 class _HeartWithNumber extends StatelessWidget {
-  const _HeartWithNumber({required this.size, required this.number});
+  const _HeartWithNumber({
+    required this.size,
+    required this.number,
+    this.showPlus = true,
+  });
   final double size;
   final String number;
+  final bool showPlus;
 
   @override
   Widget build(BuildContext context) {
@@ -425,11 +434,13 @@ class _HeartWithNumber extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: _PlusBadge(size: size * 0.5),
-          ),
+          // Only when lives are regenerating (not full / infinite).
+          if (showPlus)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: _PlusBadge(size: size * 0.5),
+            ),
         ],
       ),
     );
@@ -478,30 +489,28 @@ class _BumpTextState extends State<_BumpText>
   }
 }
 
+/// A bare settings gear — no background or border, just the icon (with a soft
+/// shadow so it stays legible over the bright scene).
 class _GearButton extends StatelessWidget {
-  const _GearButton({required this.shine, this.onTap});
-  final Animation<double> shine;
+  const _GearButton({this.onTap});
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return _TapScale(
       onTap: onTap,
-      child: SizedBox(
-        width: 46,
+      child: const SizedBox(
+        width: 40,
         height: 46,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned.fill(
-              // A circular radius turns the gloss base into a round button.
-              child: _glossBase(
-                radius: BorderRadius.circular(23),
-                animation: shine,
-              ),
-            ),
-            const Icon(Icons.settings_rounded, color: Colors.white, size: 24),
-          ],
+        child: Center(
+          child: Icon(
+            Icons.settings_rounded,
+            color: Colors.white,
+            size: 30,
+            shadows: [
+              Shadow(color: Color(0x80000000), blurRadius: 5, offset: Offset(0, 2)),
+            ],
+          ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/profile_data.dart';
+import '../l10n/strings.dart';
 import '../state/app_scope.dart';
 import '../theme/game_colors.dart';
 import 'app_image.dart';
@@ -89,7 +90,7 @@ Future<void> showUsernameDialog(BuildContext context,
     barrierDismissible: false,
     barrierColor: Colors.black.withValues(alpha: 0.6),
     builder: (ctx) => GameDialog(
-      title: 'Username',
+      title: ctx.l10n.username,
       onClose: () => Navigator.of(ctx).pop(),
       child: _UsernameBody(onDone: () {
         Navigator.of(ctx).pop();
@@ -148,11 +149,11 @@ class _UsernameBodyState extends State<_UsernameBody> {
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     counterText: '',
                     border: InputBorder.none,
                     isDense: true,
-                    hintText: 'Your name',
+                    hintText: context.l10n.yourName,
                   ),
                 ),
               ),
@@ -167,8 +168,8 @@ class _UsernameBodyState extends State<_UsernameBody> {
           ),
         ),
         const SizedBox(height: 12),
-        const Text('Create your user name',
-            style: TextStyle(
+        Text(context.l10n.createUsername,
+            style: const TextStyle(
                 color: GameColors.blue,
                 fontWeight: FontWeight.w800,
                 fontSize: 15)),
@@ -184,8 +185,8 @@ class _UsernameBodyState extends State<_UsernameBody> {
                     widget.onDone();
                   }
                 : null,
-            child: const Text('CONTINUE',
-                style: TextStyle(
+            child: Text(context.l10n.continueWord.toUpperCase(),
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -206,7 +207,7 @@ void showProfileDialog(BuildContext context, {VoidCallback? onDone}) {
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.6),
     builder: (ctx) => GameDialog(
-      title: 'Profile',
+      title: ctx.l10n.profile,
       maxWidth: 400,
       onClose: () => Navigator.of(ctx).pop(),
       child: _ProfileBody(onDone: () {
@@ -299,8 +300,8 @@ class _ProfileBodyState extends State<_ProfileBody> {
             color: GameColors.green,
             depth: 6,
             onTap: widget.onDone,
-            child: const Text('CONTINUE',
-                style: TextStyle(
+            child: Text(context.l10n.continueWord.toUpperCase(),
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -341,16 +342,16 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   if (kFrames[i].unlocked) {
                     state.setFrame(i);
                   } else {
-                    _toast('Unlock this frame later!');
+                    _toast(context.l10n.unlockFrameLater);
                   }
                 },
               ),
           ],
         );
       case _Tab.badge:
-        return const Center(
-          child: Text('COMING SOON!',
-              style: TextStyle(
+        return Center(
+          child: Text(context.l10n.comingSoon,
+              style: const TextStyle(
                   color: GameColors.inkMuted,
                   fontSize: 20,
                   fontWeight: FontWeight.w900)),
@@ -393,9 +394,9 @@ class _Tabs extends StatelessWidget {
       ),
       child: Row(
         children: [
-          seg('AVATAR', _Tab.avatar),
-          seg('FRAME', _Tab.frame),
-          seg('BADGE', _Tab.badge),
+          seg(context.l10n.avatar, _Tab.avatar),
+          seg(context.l10n.frame, _Tab.frame),
+          seg(context.l10n.badge, _Tab.badge),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/palettes.dart';
+import '../l10n/strings.dart';
 import '../state/app_scope.dart';
 
 /// Opens a bottom sheet to switch themes (incl. the eye-friendly dark option).
@@ -21,7 +22,7 @@ Future<void> showThemePicker(BuildContext context) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Theme',
+                context.l10n.theme,
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,

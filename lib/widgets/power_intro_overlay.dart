@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../state/app_scope.dart';
 
@@ -107,7 +108,7 @@ class _PowerIntroOverlayState extends State<PowerIntroOverlay>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'NEW POWER',
+                    context.l10n.newPower,
                     style: TextStyle(
                       color: palette.textMuted,
                       fontSize: 13,
@@ -139,7 +140,7 @@ class _PowerIntroOverlayState extends State<PowerIntroOverlay>
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    widget.power.label,
+                    context.l10n.powerName(widget.power),
                     style: TextStyle(
                       color: palette.arrow,
                       fontSize: 26,
@@ -148,7 +149,7 @@ class _PowerIntroOverlayState extends State<PowerIntroOverlay>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    info.tagline,
+                    context.l10n.powerDesc(widget.power),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: palette.textMuted,
@@ -225,10 +226,10 @@ class _GotItButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: onTap,
-          child: const Center(
+          child: Center(
             child: Text(
-              'Got it!',
-              style: TextStyle(
+              context.l10n.gotIt,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.w900,

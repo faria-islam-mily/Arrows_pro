@@ -1,73 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/faq.dart';
+import '../l10n/strings.dart';
 import '../theme/game_colors.dart';
 import '../widgets/ui_kit.dart';
 
-/// A single help article.
-class _Faq {
-  const _Faq(this.category, this.question, this.answer);
-  final String category;
-  final String question;
-  final String answer;
-}
-
 const String kSupportEmail = 'support@arrowspro.game';
-
-const List<_Faq> _faqs = [
-  _Faq(
-    'GETTING STARTED',
-    'How do I save my progress?',
-    'Your progress saves automatically on this device after every level. '
-        'Sign-in based cloud sync is on the way — for now, keep the game '
-        'installed to keep your levels, coins and stars.',
-  ),
-  _Faq(
-    'PIGGY BANK',
-    'How does the Piggy Bank work?',
-    'You earn coins into the Piggy Bank as you clear levels. Once it reaches '
-        'the minimum, you can break it to move every saved coin into your '
-        'spendable balance at once.',
-  ),
-  _Faq(
-    'MY ACCOUNT & PROGRESS',
-    'Can I play on two phones at the same time?',
-    'Progress is stored per device right now, so two phones keep separate '
-        'progress. Cloud accounts that sync across devices are planned.',
-  ),
-  _Faq(
-    'HOW TO PLAY',
-    'What are stars and why do they matter?',
-    'Each level can be cleared for up to 3 stars. Stars add to your total, '
-        'unlock new worlds, and show off how cleanly you solved a puzzle.',
-  ),
-  _Faq(
-    'HOW TO PLAY',
-    'How do lives work?',
-    'You start with full lives. Failing a level costs one. Lives refill over '
-        'time, or you can refill instantly with a free video, coins, or an '
-        'infinite-lives bundle.',
-  ),
-  _Faq(
-    'REMOVE ADS',
-    'Does Remove Ads get rid of all ads?',
-    'Remove Ads removes banner and full-screen ads. Optional reward videos '
-        '(for free coins or lives) stay, so you can still earn bonuses.',
-  ),
-  _Faq(
-    'AD ISSUES',
-    'I cannot close an ad',
-    'If an ad will not close, wait a few seconds for the close button to '
-        'appear, then tap it. If it is still stuck, restart the app — your '
-        'progress is safe.',
-  ),
-  _Faq(
-    'PURCHASES',
-    'How do I restore a purchase?',
-    'Open Settings and tap RESTORE PURCHASE. The store re-delivers anything '
-        'you have already bought (like Remove Ads) for free.',
-  ),
-];
 
 /// A help-center style Support page: a hero with a search box, a filterable
 /// list of expandable articles, and a contact footer.
@@ -98,9 +37,9 @@ class _SupportScreenState extends State<SupportScreen> {
     super.dispose();
   }
 
-  List<_Faq> get _filtered {
-    if (_query.isEmpty) return _faqs;
-    return _faqs
+  List<FaqEntry> _filtered(List<FaqEntry> all) {
+    if (_query.isEmpty) return all;
+    return all
         .where((f) =>
             f.question.toLowerCase().contains(_query) ||
             f.answer.toLowerCase().contains(_query) ||
@@ -110,7 +49,7 @@ class _SupportScreenState extends State<SupportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final results = _filtered;
+    final results = _filtered(localizedFaqs(context.l10n.lang));
     return Scaffold(
       backgroundColor: GameColors.homeBackground,
       body: SafeArea(
@@ -127,10 +66,10 @@ class _SupportScreenState extends State<SupportScreen> {
                     size: 42,
                     onTap: () => Navigator.of(context).pop(),
                   ),
-                  const Expanded(
-                    child: Text('Support',
+                  Expanded(
+                    child: Text(context.l10n.support,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 22,
                             fontWeight: FontWeight.w900)),
@@ -161,21 +100,21 @@ class _SupportScreenState extends State<SupportScreen> {
                       controller: _search,
                       style: const TextStyle(
                           color: GameColors.ink, fontWeight: FontWeight.w700),
-                      decoration: const InputDecoration(
-                        hintText: 'Search for articles',
-                        hintStyle: TextStyle(color: GameColors.inkMuted),
-                        prefixIcon:
-                            Icon(Icons.search_rounded, color: GameColors.inkMuted),
+                      decoration: InputDecoration(
+                        hintText: context.l10n.searchArticles,
+                        hintStyle: const TextStyle(color: GameColors.inkMuted),
+                        prefixIcon: const Icon(Icons.search_rounded,
+                            color: GameColors.inkMuted),
                         border: InputBorder.none,
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 14),
                       ),
                     ),
                   ),
                   const SizedBox(height: 18),
                   Text(
                     _query.isEmpty
-                        ? 'POPULAR ARTICLES'
+                        ? context.l10n.popularArticles
                         : '${results.length} RESULT${results.length == 1 ? '' : 'S'}',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.7),
@@ -256,9 +195,9 @@ class _HeroState extends State<_Hero> with SingleTickerProviderStateMixin {
                 color: Colors.white, size: 54),
           ),
           const SizedBox(height: 10),
-          const Text('Hi, how can we help you?',
+          Text(context.l10n.howCanWeHelp,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.w900)),
@@ -275,7 +214,7 @@ class _ArticleCard extends StatelessWidget {
     required this.open,
     required this.onTap,
   });
-  final _Faq faq;
+  final FaqEntry faq;
   final bool open;
   final VoidCallback onTap;
 
@@ -355,7 +294,7 @@ class _ContactFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text('Need more help?',
+        Text(context.l10n.needMoreHelp,
             style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.85),
                 fontSize: 16,
@@ -369,13 +308,14 @@ class _ContactFooter extends StatelessWidget {
             radius: 18,
             padding: const EdgeInsets.symmetric(vertical: 13),
             onTap: () => _showContact(context),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Text('CHAT WITH US',
-                    style: TextStyle(
+                const Icon(Icons.chat_bubble_rounded,
+                    color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(context.l10n.chatWithUs,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 17,
                         fontWeight: FontWeight.w900)),

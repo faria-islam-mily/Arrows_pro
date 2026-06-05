@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../screens/support_screen.dart';
 import '../services/audio_service.dart';
 import '../services/iap_service.dart';
@@ -27,14 +28,14 @@ Future<void> showSettingsDialog(BuildContext context) {
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) => _SettingsScaffold(
-      title: 'Settings',
+      title: ctx.l10n.settings,
       children: [
         const _ControlsBlock(),
         const SizedBox(height: 16),
         const _LanguageButton(),
         const SizedBox(height: 10),
         _PillButton(
-          label: 'SUPPORT',
+          label: ctx.l10n.support,
           icon: Icons.help_outline_rounded,
           onTap: () {
             final nav = Navigator.of(context);
@@ -46,14 +47,14 @@ Future<void> showSettingsDialog(BuildContext context) {
         ),
         const SizedBox(height: 14),
         _LinkButton(
-          'RESTORE PURCHASE',
+          ctx.l10n.restorePurchase,
           onTap: () {
             IapService.instance.restore();
             _toast(context, 'Restoring your purchases…');
           },
         ),
         const SizedBox(height: 6),
-        _LinkButton('PRIVACY POLICY',
+        _LinkButton(ctx.l10n.privacyPolicy,
             onTap: () => _toast(context, 'Privacy policy coming soon.')),
         const SizedBox(height: 10),
         const _Version(),
@@ -73,7 +74,7 @@ Future<void> showPauseDialog(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) => _SettingsScaffold(
-      title: 'Paused',
+      title: ctx.l10n.paused,
       children: [
         const _ControlsBlock(),
         const SizedBox(height: 16),
@@ -104,7 +105,7 @@ Future<void> showPauseDialog(
         ),
         const SizedBox(height: 12),
         _PillButton(
-          label: 'RESUME',
+          label: ctx.l10n.resume,
           onTap: () => Navigator.of(ctx).pop(),
         ),
         const SizedBox(height: 10),
@@ -135,9 +136,9 @@ Future<void> showQuitConfirm(
       children: [
         const _LoseLifeArt(),
         const SizedBox(height: 10),
-        const Text('YOU WILL LOSE A LIFE!',
+        Text(ctx.l10n.youWillLoseALife,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.w900)),
@@ -158,7 +159,7 @@ Future<void> showQuitConfirm(
             const SizedBox(width: 12),
             Expanded(
               child: _PillButton(
-                label: 'RESUME',
+                label: ctx.l10n.resume,
                 onTap: () => Navigator.of(ctx).pop(),
               ),
             ),
@@ -336,7 +337,7 @@ class _ControlsBlock extends StatelessWidget {
         ),
         const _Divider(),
         _ToggleRow(
-          label: 'NOTIFICATIONS',
+          label: context.l10n.notifications,
           value: state.notificationsOn,
           onChanged: state.setNotifications,
         ),
@@ -433,9 +434,9 @@ class _ThemeRow extends StatelessWidget {
     final name = context.palette.name;
     return Row(
       children: [
-        const Expanded(
-          child: Text('THEME',
-              style: TextStyle(
+        Expanded(
+          child: Text(context.l10n.theme,
+              style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
                   fontSize: 17)),

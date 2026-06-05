@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/daily_rewards.dart';
+import '../l10n/strings.dart';
 import '../services/audio_service.dart';
 import '../state/app_scope.dart';
 
@@ -117,7 +118,7 @@ class _DailyRewardBodyState extends State<_DailyRewardBody>
             ),
             const SizedBox(height: 10),
             Text(
-              'Daily Reward',
+              context.l10n.dailyReward,
               style: TextStyle(
                 fontSize: 25,
                 fontWeight: FontWeight.w800,
@@ -127,10 +128,10 @@ class _DailyRewardBodyState extends State<_DailyRewardBody>
             const SizedBox(height: 4),
             Text(
               claimable
-                  ? 'Week ${state.rewardCycle % rewardWeekCount + 1} · '
-                      'Day $offered — tap Collect!'
-                  : 'Come back tomorrow for Day '
-                      '${offered >= 7 ? 1 : offered + 1}',
+                  ? '${context.l10n.weekLabel(state.rewardCycle % rewardWeekCount + 1)} · '
+                      '${context.l10n.dayTapCollect(offered)}'
+                  : context.l10n
+                      .comeBackForDay(offered >= 7 ? 1 : offered + 1),
               style: TextStyle(color: palette.textMuted),
             ),
             const SizedBox(height: 20),
@@ -166,14 +167,14 @@ class _DailyRewardBodyState extends State<_DailyRewardBody>
               height: 56,
               child: claimable
                   ? _GradientButton(
-                      label: 'Collect',
+                      label: context.l10n.collect,
                       icon: Icons.card_giftcard,
                       colors: [palette.primary, palette.accent],
                       onTap: () => _collect(state),
                     )
                   : FilledButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Continue'),
+                      child: Text(context.l10n.continueWord),
                     ),
             ),
           ],
@@ -288,7 +289,7 @@ class _RewardCell extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              'Day ${reward.day}',
+              context.l10n.dayLabel(reward.day),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -314,7 +315,7 @@ class _RewardCell extends StatelessWidget {
               ),
             const SizedBox(height: 4),
             Text(
-              collected ? 'Claimed' : reward.label,
+              collected ? context.l10n.claimed : reward.label,
               style: TextStyle(
                 fontSize: big ? 15 : 13,
                 fontWeight: FontWeight.w800,

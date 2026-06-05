@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/levels.dart';
+import '../l10n/strings.dart';
 import '../state/app_scope.dart';
 import '../theme/game_colors.dart';
 
@@ -21,12 +22,12 @@ class LeaderboardScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
             child: Text(
-              'Your Progress',
+              context.l10n.yourProgress,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: GameColors.ink,
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
@@ -40,25 +41,25 @@ class LeaderboardScreen extends StatelessWidget {
                 _StatCard(
                   icon: Icons.star_rounded,
                   iconColor: GameColors.star,
-                  label: 'Total Stars',
+                  label: context.l10n.totalStars,
                   value: '${state.starTotal} / $maxStars',
                 ),
                 _StatCard(
                   icon: Icons.flag_rounded,
                   iconColor: GameColors.green,
-                  label: 'Levels Cleared',
+                  label: context.l10n.levelsCleared,
                   value: '$cleared / $kLevelCount',
                 ),
                 _StatCard(
                   icon: Icons.local_fire_department_rounded,
                   iconColor: GameColors.red,
-                  label: 'Day Streak',
+                  label: context.l10n.dayStreak,
                   value: '${state.streak}',
                 ),
                 _StatCard(
                   icon: Icons.monetization_on_rounded,
                   iconColor: GameColors.coin,
-                  label: 'Coins',
+                  label: context.l10n.coinsTitle,
                   value: '${state.coins}',
                 ),
                 const SizedBox(height: 16),
@@ -68,15 +69,15 @@ class LeaderboardScreen extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
                   ),
-                  child: const Column(
+                  child: Column(
                     children: [
-                      Icon(Icons.emoji_events_rounded,
+                      const Icon(Icons.emoji_events_rounded,
                           color: GameColors.star, size: 40),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
-                        'Global leaderboards coming soon!',
+                        context.l10n.globalLeaderboards,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: GameColors.inkMuted,
                           fontWeight: FontWeight.w700,
                         ),

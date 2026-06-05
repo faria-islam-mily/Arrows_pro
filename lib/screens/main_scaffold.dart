@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
+import '../state/app_scope.dart';
 import '../state/main_nav.dart';
 import '../theme/game_colors.dart';
 import 'home_screen.dart';
@@ -72,19 +74,20 @@ class _BottomNav extends StatelessWidget {
             children: [
               _NavItem(
                 icon: Icons.storefront_rounded,
-                label: 'SHOP',
+                label: context.l10n.shop.toUpperCase(),
                 active: index == 0,
+                showDot: context.appState.canClaimDailyGift,
                 onTap: () => onTap(0),
               ),
               _NavItem(
                 icon: Icons.home_rounded,
-                label: 'HOME',
+                label: context.l10n.home.toUpperCase(),
                 active: index == 1,
                 onTap: () => onTap(1),
               ),
               _NavItem(
                 icon: Icons.leaderboard_rounded,
-                label: 'RANKS',
+                label: context.l10n.ranks.toUpperCase(),
                 active: index == 2,
                 onTap: () => onTap(2),
               ),
@@ -102,12 +105,14 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.active,
     required this.onTap,
+    this.showDot = false,
   });
 
   final IconData icon;
   final String label;
   final bool active;
   final VoidCallback onTap;
+  final bool showDot;
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +130,27 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 26),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, color: color, size: 26),
+                  if (showDot)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 11,
+                        height: 11,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF3B3B),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: GameColors.navBar, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 2),
               Text(
                 label,

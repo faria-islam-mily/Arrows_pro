@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../services/audio_service.dart';
 import '../services/iap_service.dart';
 import '../state/app_scope.dart';
@@ -35,10 +36,10 @@ Future<void> buyRemoveAds(BuildContext context) async {
 void showPurchaseSuccess(BuildContext context) => showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (_) => const _PurchaseResultDialog(
+      builder: (_) => _PurchaseResultDialog(
         success: true,
-        title: 'PURCHASE COMPLETE!',
-        message: 'Ads removed — enjoy the quiet. Thank you!',
+        title: context.l10n.purchaseComplete,
+        message: context.l10n.adsRemovedThanks,
       ),
     );
 
@@ -48,8 +49,8 @@ void showPurchaseFailed(BuildContext context, {String? message}) =>
       barrierColor: Colors.black.withValues(alpha: 0.6),
       builder: (_) => _PurchaseResultDialog(
         success: false,
-        title: 'PURCHASE FAILED!',
-        message: message ?? 'Oops! Something went wrong.\nPlease try again later.',
+        title: context.l10n.purchaseFailedTitle,
+        message: message ?? context.l10n.somethingWrong,
       ),
     );
 
@@ -135,7 +136,7 @@ class _PurchaseResultDialog extends StatelessWidget {
                         ),
                         const SizedBox(height: 22),
                         _ChunkyButton(
-                          label: 'OKAY',
+                          label: context.l10n.okay,
                           color: const Color(0xFF2EA843),
                           onTap: () {
                             AudioService.instance.sfx('pop');

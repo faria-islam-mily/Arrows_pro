@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/levels.dart';
 import '../data/worlds.dart';
+import '../l10n/strings.dart';
 import '../screens/game_screen.dart';
 import '../screens/piggy_bank_screen.dart';
 import '../state/app_scope.dart';
@@ -185,22 +186,29 @@ class _HomeMapState extends State<HomeMap> {
           child: _JumpButton(onTap: _goToCurrent),
         ),
 
-        // Bottom PLAY button — always launches the current level.
+        // Bottom PLAY button — narrower, centred, and gently pulsing.
         Positioned(
-          left: 40,
-          right: 40,
-          bottom: 14,
-          child: _bottomButton(frontier),
+          left: 0,
+          right: 0,
+          bottom: 16,
+          child: Center(
+            child: _PlayPulse(
+              child: SizedBox(
+                width: 248,
+                child: _bottomButton(context, frontier),
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _bottomButton(int frontier) {
+  Widget _bottomButton(BuildContext context, int frontier) {
     return _BottomButton(
       color: GameColors.green,
-      topLabel: 'PLAY',
-      bottomLabel: 'LEVEL $frontier',
+      topLabel: context.l10n.play,
+      bottomLabel: '${context.l10n.level.toUpperCase()} $frontier',
       onTap: () => _play(frontier),
     );
   }
@@ -612,6 +620,45 @@ class _BottomButton extends StatelessWidget {
   }
 }
 
+/// Gives the PLAY button a slow "breathing" pulse (scale + tiny bob) so it
+/// always feels alive and invites a tap.
+class _PlayPulse extends StatefulWidget {
+  const _PlayPulse({required this.child});
+  final Widget child;
+
+  @override
+  State<_PlayPulse> createState() => _PlayPulseState();
+}
+
+class _PlayPulseState extends State<_PlayPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Transform.translate(
+          offset: Offset(0, -2 * t),
+          child: Transform.scale(scale: 1 + 0.035 * t, child: child),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
 class _SideRail extends StatelessWidget {
   const _SideRail({required this.adsRemoved});
   final bool adsRemoved;
@@ -623,7 +670,7 @@ class _SideRail extends StatelessWidget {
         _RailButton(
           color: const Color(0xFFE85C9A),
           image: AppImages.piggyBank,
-          label: 'PIGGY',
+          label: context.l10n.piggy,
           badge: true,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const PiggyBankScreen()),
@@ -634,7 +681,7 @@ class _SideRail extends StatelessWidget {
           _RailButton(
             color: GameColors.blue,
             image: AppImages.noAds,
-            label: 'NO ADS',
+            label: context.l10n.noAdsLabel,
             onTap: () => showRemoveAds(context),
           ),
           const SizedBox(height: 12),
@@ -642,7 +689,7 @@ class _SideRail extends StatelessWidget {
         _RailButton(
           color: const Color(0xFFF2A33C),
           emoji: '🪙',
-          label: 'SALE',
+          label: context.l10n.sale,
           onTap: () => showSpecialOffer(context),
         ),
       ],

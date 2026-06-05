@@ -41,6 +41,7 @@ class AppState extends ChangeNotifier {
   static const _kFrame = 'frameIndex';
   static const _kProfileDone = 'profileDone';
   static const _kLanguage = 'languageName';
+  static const _kDailyGift = 'dailyGiftReadyMs';
 
   int _themeIndex = 0;
   int _unlockedLevel = 1; // highest level number the player may open
@@ -90,6 +91,12 @@ class AppState extends ChangeNotifier {
   // Display language. Currently a saved UI preference (the picker reflects it);
   // wiring it to full string translation is a future step.
   String _language = 'English';
+
+  // ---- Daily free-coin gift (separate from the 7-day streak reward) ----
+  static const int kDailyGiftCoins = 50;
+  static const Duration kDailyGiftCooldown = Duration(hours: 24);
+  // Epoch ms when the gift can next be claimed (0 = available now / never taken).
+  int _dailyGiftReadyMs = 0;
 
   /// The level at which each power is introduced (gradual rollout).
   static const Map<PowerUp, int> _unlockLevel = {
@@ -339,6 +346,28 @@ class AppState extends ChangeNotifier {
   /// Today's daily reward can still be collected.
   bool get canClaimDaily => _rewardClaimed != _dateKey(DateTime.now());
 
+  /// The free-coin daily gift is ready to claim.
+  bool get canClaimDailyGift =>
+      DateTime.now().millisecondsSinceEpoch >= _dailyGiftReadyMs;
+
+  /// Time until the next free gift, or null when it's claimable now.
+  Duration? get timeToNextGift {
+    if (canClaimDailyGift) return null;
+    final ms = _dailyGiftReadyMs - DateTime.now().millisecondsSinceEpoch;
+    return ms > 0 ? Duration(milliseconds: ms) : null;
+  }
+
+  /// Claim the free [kDailyGiftCoins]-coin gift and start the cooldown.
+  /// Returns false if it wasn't ready yet.
+  Future<bool> claimDailyGift() async {
+    if (!canClaimDailyGift) return false;
+    _dailyGiftReadyMs =
+        DateTime.now().millisecondsSinceEpoch + kDailyGiftCooldown.inMilliseconds;
+    await _storage.setInt(_kDailyGift, _dailyGiftReadyMs);
+    await addCoins(kDailyGiftCoins); // notifies listeners
+    return true;
+  }
+
   /// Which day of the 1..7 cycle is offered today (advances if yesterday was
   /// claimed, restarts at 1 on a first visit or a missed day).
   int get offeredRewardDay {
@@ -409,6 +438,7 @@ class AppState extends ChangeNotifier {
     _frameIndex = _storage.getInt(_kFrame, 0);
     _profileDone = _storage.getBool(_kProfileDone, false);
     _language = _storage.getString(_kLanguage) ?? 'English';
+    _dailyGiftReadyMs = _storage.getInt(_kDailyGift, 0);
     // Star total is cached; on first run (or upgrade) seed it by summing once.
     _starsTotal = _storage.getInt(_kStarsTotal, -1);
     if (_starsTotal < 0) {

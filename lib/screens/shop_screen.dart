@@ -4,13 +4,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/shop_catalog.dart';
+import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/shop_service.dart';
 import '../state/app_scope.dart';
+import '../state/app_state.dart';
 import '../theme/app_images.dart';
 import '../theme/game_colors.dart';
 import '../widgets/app_image.dart';
-import '../widgets/daily_reward_sheet.dart';
 import '../widgets/purchase_dialogs.dart';
 import '../widgets/ui_kit.dart';
 
@@ -54,6 +55,25 @@ class _ShopScreenState extends State<ShopScreen> {
     super.dispose();
   }
 
+  String _fmtGift(Duration? d) {
+    if (d == null) return '';
+    return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
+  }
+
+  Future<void> _claimGift() async {
+    final state = AppScope.read(context);
+    if (await state.claimDailyGift()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('+${AppState.kDailyGiftCoins} coins!'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   String _toMidnight() {
     final now = DateTime.now();
     final midnight = DateTime(now.year, now.month, now.day + 1);
@@ -82,7 +102,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     _NoAdsCard(onBuy: () => buyRemoveAds(context)),
                     const SizedBox(height: 14),
                   ],
-                  const _SectionLabel('COINS'),
+                  _SectionLabel(context.l10n.coinsWord),
                   const SizedBox(height: 8),
                   _CoinGrid(),
                   const SizedBox(height: 16),
@@ -96,9 +116,9 @@ class _ShopScreenState extends State<ShopScreen> {
                   ),
                   const SizedBox(height: 12),
                   _DailyGiftRow(
-                    canClaim: state.canClaimDaily,
-                    timeLeft: _toMidnight(),
-                    onTap: () => showDailyRewardSheet(context),
+                    canClaim: state.canClaimDailyGift,
+                    timeLeft: _fmtGift(state.timeToNextGift),
+                    onTap: _claimGift,
                   ),
                 ],
               ),
@@ -123,7 +143,7 @@ class _ShopTopBar extends StatelessWidget {
     } else {
       final t = state.timeToNextLife;
       if (t == null) {
-        status = 'FULL';
+        status = context.l10n.full;
       } else {
         final m = t.inMinutes.remainder(60).toString().padLeft(2, '0');
         status = '${t.inHours.toString().padLeft(2, '0')}:$m';
@@ -151,9 +171,9 @@ class _ShopTopBar extends StatelessWidget {
               ),
             ),
             // SHOP — centre.
-            const Text(
-              'SHOP',
-              style: TextStyle(
+            Text(
+              context.l10n.shop.toUpperCase(),
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
@@ -403,17 +423,17 @@ class _NoAdsCard extends StatelessWidget {
             fallback: Icon(Icons.block_rounded, color: GameColors.red, size: 40),
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('NO ADS',
-                    style: TextStyle(
+                Text(context.l10n.noAdsLabel,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.w900)),
-                Text('Remove interstitial and banner ads',
-                    style: TextStyle(
+                Text(context.l10n.removeInterstitial,
+                    style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 12,
                         fontWeight: FontWeight.w600)),
@@ -716,14 +736,14 @@ class _FreeRow extends StatelessWidget {
             depth: 5,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
             onTap: onTap,
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.play_circle_fill_rounded,
+                const Icon(Icons.play_circle_fill_rounded,
                     color: Colors.white, size: 18),
-                SizedBox(width: 5),
-                Text('FREE',
-                    style: TextStyle(
+                const SizedBox(width: 5),
+                Text(context.l10n.free,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
                         fontSize: 14)),
@@ -764,12 +784,31 @@ class _DailyGiftRow extends StatelessWidget {
               fallback: Text('🎁', style: TextStyle(fontSize: 28)),
             ),
             const SizedBox(width: 10),
-            const Expanded(
-              child: Text('DAILY GIFT',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(context.l10n.dailyGift,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CoinIcon(size: 18),
+                      const SizedBox(width: 4),
+                      Text('${AppState.kDailyGiftCoins} ${context.l10n.coinsWord}',
+                          style: const TextStyle(
+                              color: Color(0xFFFFE08A),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ],
+              ),
             ),
             if (canClaim)
               ChunkyButton(
@@ -778,8 +817,8 @@ class _DailyGiftRow extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                 onTap: onTap,
-                child: const Text('CLAIM',
-                    style: TextStyle(
+                child: Text(context.l10n.claim,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
                         fontSize: 14)),
@@ -787,8 +826,8 @@ class _DailyGiftRow extends StatelessWidget {
             else
               Row(
                 children: [
-                  const Text('NEXT IN ',
-                      style: TextStyle(
+                  Text(context.l10n.nextIn,
+                      style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
                           fontWeight: FontWeight.w700)),

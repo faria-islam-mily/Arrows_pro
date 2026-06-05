@@ -6,6 +6,7 @@ import '../data/levels.dart';
 import '../data/palettes.dart';
 import '../data/shop_catalog.dart';
 import '../game/game_controller.dart';
+import '../l10n/strings.dart';
 import '../models/level.dart';
 import '../models/power_up.dart';
 import '../services/ads_service.dart';
@@ -99,7 +100,7 @@ class _GameScreenState extends State<GameScreen>
     }
     showQuitConfirm(
       context,
-      title: 'Restart?',
+      title: context.l10n.restartQ,
       confirmIcon: Icons.refresh_rounded,
       onConfirm: () {
         state.loseLife();
@@ -116,7 +117,7 @@ class _GameScreenState extends State<GameScreen>
     }
     showQuitConfirm(
       context,
-      title: 'Quit Game',
+      title: context.l10n.quitGame,
       confirmIcon: Icons.home_rounded,
       onConfirm: () {
         state.loseLife();
@@ -461,8 +462,8 @@ class _GameScreenState extends State<GameScreen>
                       children: [
                         Text(
                           widget.level.difficulty == 'Daily'
-                              ? 'Daily'
-                              : 'Level ${widget.level.number}',
+                              ? context.l10n.daily
+                              : '${context.l10n.level} ${widget.level.number}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

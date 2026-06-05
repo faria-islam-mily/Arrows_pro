@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../state/app_scope.dart';
 
 /// First-level coach. It is NON-blocking (taps pass straight through to the
@@ -63,7 +64,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
                     ],
                   ),
                   child: Text(
-                    'Tap the glowing arrow to slide it off!',
+                    context.l10n.tutorialTap,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: palette.accent,

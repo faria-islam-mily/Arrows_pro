@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../state/app_scope.dart';
 import '../state/app_state.dart';
 import '../theme/app_images.dart';
@@ -88,9 +91,9 @@ class PiggyBankScreen extends StatelessWidget {
                   radius: 18,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   onTap: canBreak ? () => _break(context) : null,
-                  child: const Text(
-                    'BREAK',
-                    style: TextStyle(
+                  child: Text(
+                    context.l10n.breakWord,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
@@ -172,15 +175,15 @@ class _PiggyTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const _GameText('PIGGY',
-            fill: Color(0xFFFFC72E),
-            stroke: Color(0xFF7A4E00),
+        _GameText(context.l10n.piggy,
+            fill: const Color(0xFFFFC72E),
+            stroke: const Color(0xFF7A4E00),
             fontSize: 46),
         Transform.translate(
           offset: const Offset(0, -10),
-          child: const _GameText('BANK',
+          child: _GameText(context.l10n.bankWord,
               fill: Colors.white,
-              stroke: Color(0xFF3A5BC0),
+              stroke: const Color(0xFF3A5BC0),
               fontSize: 52),
         ),
       ],
@@ -278,56 +281,99 @@ class _Milestone extends StatelessWidget {
   }
 }
 
-/// The "!" tutorial overlay: beat levels → fill piggy → unlock rewards, with
-/// curved gold arrows linking the steps.
-class _PiggyInfo extends StatelessWidget {
+/// The "!" tutorial overlay: beat levels → fill piggy → unlock rewards. The
+/// steps slide in one-by-one, the icons gently bob, and animated gold chevrons
+/// "flow" downward between each step.
+class _PiggyInfo extends StatefulWidget {
   const _PiggyInfo();
 
   @override
+  State<_PiggyInfo> createState() => _PiggyInfoState();
+}
+
+class _PiggyInfoState extends State<_PiggyInfo>
+    with TickerProviderStateMixin {
+  // One-shot staggered entrance.
+  late final AnimationController _intro = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..forward();
+  // Looping idle life: bobbing icons, marching chevrons, pulsing prompt.
+  late final AnimationController _loop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _intro.dispose();
+    _loop.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: SingleChildScrollView(
-        padding: EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _PiggyTitle(),
-            SizedBox(height: 28),
-            _InfoStep(
-              icon: Text('🎯', style: TextStyle(fontSize: 52)),
-              label: 'Beat Levels!',
-            ),
-            _CurveArrow(),
-            _InfoStep(
-              icon: AppImage(
-                AppImages.piggyBank,
-                size: 66,
-                fallback: Text('🐷', style: TextStyle(fontSize: 52)),
+            _Entrance(anim: _intro, order: 0, child: const _PiggyTitle()),
+            const SizedBox(height: 28),
+            _Entrance(
+              anim: _intro,
+              order: 1,
+              child: _InfoStep(
+                icon: const Text('🎯', style: TextStyle(fontSize: 52)),
+                label: context.l10n.beatLevels,
+                loop: _loop,
+                phase: 0.0,
               ),
-              label: 'Fill Piggy!',
             ),
-            _CurveArrow(flip: true),
-            _InfoStep(
-              icon: AppImage(
-                AppImages.offerSpecial,
-                size: 62,
-                fallback: Text('💰', style: TextStyle(fontSize: 52)),
+            _Entrance(anim: _intro, order: 2, child: _FlowArrow(loop: _loop)),
+            _Entrance(
+              anim: _intro,
+              order: 3,
+              child: _InfoStep(
+                icon: const AppImage(
+                  AppImages.piggyBank,
+                  size: 66,
+                  fallback: Text('🐷', style: TextStyle(fontSize: 52)),
+                ),
+                label: context.l10n.fillPiggy,
+                loop: _loop,
+                phase: 0.33,
               ),
-              label: 'Unlock Rewards!',
             ),
-            SizedBox(height: 28),
-            Text('Break Piggy to collect coins!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900)),
-            SizedBox(height: 16),
-            Text('Tap to Continue',
-                style: TextStyle(
-                    color: GameColors.star,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900)),
+            _Entrance(anim: _intro, order: 4, child: _FlowArrow(loop: _loop)),
+            _Entrance(
+              anim: _intro,
+              order: 5,
+              child: _InfoStep(
+                icon: const AppImage(
+                  AppImages.offerSpecial,
+                  size: 62,
+                  fallback: Text('💰', style: TextStyle(fontSize: 52)),
+                ),
+                label: context.l10n.unlockRewards,
+                loop: _loop,
+                phase: 0.66,
+              ),
+            ),
+            const SizedBox(height: 28),
+            _Entrance(
+              anim: _intro,
+              order: 6,
+              child: Text(context.l10n.breakPiggyToCollect,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900)),
+            ),
+            const SizedBox(height: 16),
+            _PulseText(loop: _loop, text: context.l10n.tapToContinue),
           ],
         ),
       ),
@@ -335,17 +381,70 @@ class _PiggyInfo extends StatelessWidget {
   }
 }
 
+/// Fades + slides its [child] up, on a delay derived from [order].
+class _Entrance extends StatelessWidget {
+  const _Entrance({
+    required this.anim,
+    required this.order,
+    required this.child,
+  });
+  final Animation<double> anim;
+  final int order;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = (order * 0.1).clamp(0.0, 0.7);
+    final curved = CurvedAnimation(
+      parent: anim,
+      curve: Interval(start, (start + 0.45).clamp(0.0, 1.0),
+          curve: Curves.easeOutBack),
+    );
+    return AnimatedBuilder(
+      animation: curved,
+      builder: (context, child) {
+        final v = curved.value;
+        return Opacity(
+          opacity: v.clamp(0.0, 1.0),
+          child: Transform.translate(offset: Offset(0, 26 * (1 - v)), child: child),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
 class _InfoStep extends StatelessWidget {
-  const _InfoStep({required this.icon, required this.label});
+  const _InfoStep({
+    required this.icon,
+    required this.label,
+    required this.loop,
+    this.phase = 0,
+  });
   final Widget icon;
   final String label;
+  final Animation<double> loop;
+  final double phase;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(width: 62, height: 62, child: Center(child: icon)),
+        SizedBox(
+          width: 62,
+          height: 62,
+          child: Center(
+            child: AnimatedBuilder(
+              animation: loop,
+              builder: (context, child) {
+                final bob = math.sin((loop.value + phase) * math.pi * 2) * 4;
+                return Transform.translate(offset: Offset(0, bob), child: child);
+              },
+              child: icon,
+            ),
+          ),
+        ),
         const SizedBox(width: 16),
         Text(label,
             style: const TextStyle(
@@ -357,73 +456,66 @@ class _InfoStep extends StatelessWidget {
   }
 }
 
-/// A curved gold arrow linking two tutorial steps. [flip] mirrors it.
-class _CurveArrow extends StatelessWidget {
-  const _CurveArrow({this.flip = false});
-  final bool flip;
+/// Three gold chevrons that "flow" downward to link the steps — a bright
+/// highlight marches through them so the progression always feels alive.
+class _FlowArrow extends StatelessWidget {
+  const _FlowArrow({required this.loop});
+  final Animation<double> loop;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Transform(
-        alignment: Alignment.center,
-        transform: Matrix4.diagonal3Values(flip ? -1.0 : 1.0, 1.0, 1.0),
-        child: const SizedBox(
-          width: 90,
-          height: 46,
-          child: CustomPaint(painter: _ArrowPainter()),
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: AnimatedBuilder(
+        animation: loop,
+        builder: (context, _) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < 3; i++) _chevron(i),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _chevron(int i) {
+    // A smooth wave travelling 0→1→2 (wrapping) brightens each chevron in turn.
+    final pos = loop.value * 3;
+    final d = (pos - i).abs();
+    final wrapped = math.min(d, 3 - d);
+    final bright = (1.0 - wrapped).clamp(0.0, 1.0);
+    return Transform.translate(
+      offset: Offset(0, -i * 6.0), // overlap into a connected arrow
+      child: Icon(
+        Icons.keyboard_arrow_down_rounded,
+        size: 30 + bright * 8,
+        color: GameColors.star.withValues(alpha: 0.3 + 0.7 * bright),
       ),
     );
   }
 }
 
-class _ArrowPainter extends CustomPainter {
-  const _ArrowPainter();
+/// Text that gently breathes (scale pulse) to draw the eye.
+class _PulseText extends StatelessWidget {
+  const _PulseText({required this.loop, required this.text});
+  final Animation<double> loop;
+  final String text;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    // A bold curved hook (cubic Bézier).
-    final p0 = Offset(w * 0.18, h * 0.08);
-    final p1 = Offset(w * 0.74, h * -0.04);
-    final p2 = Offset(w * 0.94, h * 0.46);
-    final p3 = Offset(w * 0.56, h * 0.80); // arrow tip
-
-    final stroke = Paint()
-      ..color = GameColors.star
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 11
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(
-      Path()
-        ..moveTo(p0.dx, p0.dy)
-        ..cubicTo(p1.dx, p1.dy, p2.dx, p2.dy, p3.dx, p3.dy),
-      stroke,
-    );
-
-    // Filled triangular arrowhead, oriented along the end tangent (p3 - p2).
-    var dir = p3 - p2;
-    final len = dir.distance == 0 ? 1.0 : dir.distance;
-    dir = Offset(dir.dx / len, dir.dy / len);
-    final perp = Offset(-dir.dy, dir.dx);
-    const headLen = 20.0, headW = 13.0;
-    final base = p3 - dir * headLen;
-    final fill = Paint()
-      ..color = GameColors.star
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(
-      Path()
-        ..moveTo(p3.dx, p3.dy)
-        ..lineTo(base.dx + perp.dx * headW, base.dy + perp.dy * headW)
-        ..lineTo(base.dx - perp.dx * headW, base.dy - perp.dy * headW)
-        ..close(),
-      fill,
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: loop,
+      builder: (context, child) {
+        final s = 1 + 0.06 * math.sin(loop.value * math.pi * 2);
+        return Transform.scale(scale: s, child: child);
+      },
+      child: Text(text,
+          style: const TextStyle(
+              color: GameColors.star,
+              fontSize: 21,
+              fontWeight: FontWeight.w900)),
     );
   }
-
-  @override
-  bool shouldRepaint(covariant _ArrowPainter old) => false;
 }

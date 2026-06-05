@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
+
 /// Full-screen "PROCESSING" spinner shown during a purchase / store round-trip.
 /// Show it with [showProcessing] and dismiss with [hideProcessing].
 void showProcessing(BuildContext context) {
@@ -58,9 +60,9 @@ class _ProcessingOverlayState extends State<ProcessingOverlay>
               builder: (context, _) =>
                   CustomPaint(painter: _SpinnerPainter(_c.value)),
             ),
-            const Text(
-              'PROCESSING',
-              style: TextStyle(
+            Text(
+              context.l10n.processing,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,
                 fontWeight: FontWeight.w900,

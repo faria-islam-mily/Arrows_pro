@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/shop_catalog.dart';
+import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/ads_service.dart';
 import '../services/iap_service.dart';
@@ -77,7 +78,7 @@ class _RemoveAdsPage extends StatelessWidget {
     final price = IapService.instance.removeAdsPrice;
     return _PromoScaffold(
       children: [
-        const _CartoonTitle(main: 'REMOVE', sub: 'ADS'),
+        _CartoonTitle(main: context.l10n.removeWord, sub: context.l10n.adsWord),
         const Spacer(flex: 2),
         const _FloatingHero(
           child: AppImage(
@@ -87,10 +88,10 @@ class _RemoveAdsPage extends StatelessWidget {
           ),
         ),
         const Spacer(flex: 2),
-        const Text(
-          'Removes banner &\nfull screen Ads',
+        Text(
+          context.l10n.removesAds,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 28,
             height: 1.15,
@@ -100,7 +101,7 @@ class _RemoveAdsPage extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         Text(
-          'Keep optional Ads for rewards',
+          context.l10n.keepOptionalAds,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.75),
@@ -147,7 +148,8 @@ class _SpecialOfferPage extends StatelessWidget {
     const offer = kSpecialOffer;
     return _PromoScaffold(
       children: [
-        const _CartoonTitle(main: 'SPECIAL', sub: 'OFFER'),
+        _CartoonTitle(
+            main: context.l10n.specialWord, sub: context.l10n.offerWord),
         const Spacer(),
         const _FloatingHero(
           sparkles: true,
@@ -669,9 +671,9 @@ class _LivesDialogState extends State<_LivesDialog> {
               ),
               borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
             ),
-            child: const Text('Lives',
+            child: Text(context.l10n.lives,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 26,
                     fontWeight: FontWeight.w900,
@@ -700,7 +702,7 @@ class _LivesDialogState extends State<_LivesDialog> {
                   child: _BigHeart(label: infinite ? '∞' : '${state.lives}'),
                 ),
                 const SizedBox(height: 14),
-                Text(infinite ? 'INFINITE LIVES' : 'NEXT LIFE IN',
+                Text(infinite ? context.l10n.infiniteLives : context.l10n.nextLifeIn,
                     style: const TextStyle(
                         color: Color(0xFFAEB9D4),
                         fontSize: 14,
@@ -746,16 +748,16 @@ class _LivesDialogState extends State<_LivesDialog> {
                     radius: 18,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     onTap: _refill,
-                    child: const Column(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('REFILL',
-                            style: TextStyle(
+                        Text(context.l10n.refill,
+                            style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900)),
-                        Text('FREE',
-                            style: TextStyle(
+                        Text(context.l10n.free,
+                            style: const TextStyle(
                                 color: Color(0xFFDFFFCB),
                                 fontSize: 13,
                                 letterSpacing: 1,

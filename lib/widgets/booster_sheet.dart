@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/audio_service.dart';
 import '../state/app_scope.dart';
@@ -104,22 +105,25 @@ class _BoosterDialog extends StatelessWidget {
     // Reward one (placeholder for a rewarded video ad).
     Future<void> watchForOne() async {
       final state = AppScope.read(context);
+      final msg = context.l10n.boosterAdded(power);
       await state.addPower(power, 1);
       AudioService.instance.sfx('win');
       if (context.mounted) Navigator.of(context).pop();
-      toast('Nice! +1 ${power.label} added.');
+      toast(msg);
     }
 
     Future<void> buyBundle() async {
       final state = AppScope.read(context);
+      final needMsg = context.l10n.needCoinsBundle(power.bundlePrice);
+      final addedMsg = '+$kPowerBundleAmount ${context.l10n.powerName(power)}';
       if (!await state.spendCoins(power.bundlePrice)) {
-        toast('Need ${power.bundlePrice} coins for this bundle.');
+        toast(needMsg);
         return;
       }
       await state.addPower(power, kPowerBundleAmount);
       AudioService.instance.sfx('win');
       if (context.mounted) Navigator.of(context).pop();
-      toast('+$kPowerBundleAmount ${power.label}s added!');
+      toast(addedMsg);
     }
 
     return Dialog(
@@ -138,10 +142,10 @@ class _BoosterDialog extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(22, 14, 12, 14),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'GET BOOSTER',
-                    style: TextStyle(
+                    context.l10n.getBooster,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
@@ -198,7 +202,7 @@ class _BoosterDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Get a ${power.label} Booster!',
+                  context.l10n.boosterTitle(power),
                   style: TextStyle(
                     color: palette.arrow == const Color(0xFFEE4B4B)
                         ? Colors.white
@@ -216,7 +220,7 @@ class _BoosterDialog extends StatelessWidget {
                         onTap: watchForOne,
                         top: const Icon(Icons.smart_display,
                             color: Colors.white, size: 22),
-                        label: 'GET x1',
+                        label: '${context.l10n.get} x1',
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -224,7 +228,7 @@ class _BoosterDialog extends StatelessWidget {
                       child: _BoosterButton(
                         colors: const [Color(0xFF3FD17A), Color(0xFF27A35A)],
                         onTap: buyBundle,
-                        label: 'GET x$kPowerBundleAmount',
+                        label: '${context.l10n.get} x$kPowerBundleAmount',
                         bottom: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
