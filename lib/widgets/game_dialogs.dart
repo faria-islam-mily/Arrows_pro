@@ -2,15 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/power_up.dart';
 import '../services/ads_service.dart';
 import '../state/app_scope.dart';
 import '../state/main_nav.dart';
+import '../theme/app_images.dart';
 import '../theme/game_colors.dart';
 import 'app_image.dart';
 import 'ui_kit.dart';
 
 /// Coin cost to replay an already-cleared level without spending a life.
 const int kReplayCoinCost = 450;
+
+/// Coin cost to buy a revive (continue from the same state) on a level fail.
+const int kReviveCost = 900;
 
 /// A broken heart that gently pulses and wobbles — adds life to the
 /// fail / out-of-lives dialogs.
@@ -460,62 +465,472 @@ class _OutOfLivesBodyState extends State<_OutOfLivesBody> {
 
 /// The in-level "you ran out of moves" dialog: keep playing by watching a video,
 /// or replay (which costs a life). Premium reskin of the old fail dialog.
+const Color _failPanel = Color(0xFF2C3858);
+const Color _failInner = Color(0xFF3B4668);
+
+/// The "Level Failed" overlay (styled after the Out-of-Stars reference): a
+/// coins+lives HUD on top, a fail panel with two ways to keep playing from the
+/// same state (free video life / buy a life), and a safety-net offer below.
 Future<void> showLevelFailed(
   BuildContext context, {
-  required VoidCallback onContinue,
-  required VoidCallback onReplay,
+  required VoidCallback onWatch, // free rewarded video -> continue
+  required VoidCallback onBuy, // spend coins -> continue
+  required VoidCallback onGiveUp, // X -> replay (lose a life)
+  required VoidCallback onOffer, // buy the safety-net bundle -> continue
+  required int buyCost,
 }) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    barrierColor: Colors.black.withValues(alpha: 0.6),
-    builder: (ctx) => GameDialog(
-      title: 'Level Failed',
-      headerColor: GameColors.headerBlue,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const _PulseHeart(size: 64),
-          const SizedBox(height: 4),
-          const Text(
-            'You will lose a life',
-            style: TextStyle(
-              color: GameColors.ink,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
+    barrierColor: Colors.black.withValues(alpha: 0.7),
+    builder: (ctx) => _LevelFailedOverlay(
+      onWatch: onWatch,
+      onBuy: onBuy,
+      onGiveUp: onGiveUp,
+      onOffer: onOffer,
+      buyCost: buyCost,
+    ),
+  );
+}
+
+class _LevelFailedOverlay extends StatefulWidget {
+  const _LevelFailedOverlay({
+    required this.onWatch,
+    required this.onBuy,
+    required this.onGiveUp,
+    required this.onOffer,
+    required this.buyCost,
+  });
+  final VoidCallback onWatch, onBuy, onGiveUp, onOffer;
+  final int buyCost;
+
+  @override
+  State<_LevelFailedOverlay> createState() => _LevelFailedOverlayState();
+}
+
+class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.appState;
+    final String lifeRight;
+    if (state.hasInfiniteLives) {
+      lifeRight = '∞';
+    } else {
+      final t = state.timeToNextLife;
+      if (t == null) {
+        lifeRight = 'FULL';
+      } else {
+        final m = t.inMinutes.remainder(60).toString().padLeft(2, '0');
+        final s = t.inSeconds.remainder(60).toString().padLeft(2, '0');
+        lifeRight = '$m:$s';
+      }
+    }
+
+    return Material(
+      type: MaterialType.transparency,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              // Coins + lives HUD.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _HudPill(icon: const CoinIcon(size: 30), label: '${state.coins}'),
+                  _HudPill(
+                    icon: const HeartIcon(size: 30),
+                    label: '${state.lives}',
+                    trailing: lifeRight,
+                  ),
+                ],
+              ),
+              Expanded(child: Center(child: _panel())),
+              _SafetyNetTile(buyCost: 'BDT 700', onBuy: widget.onOffer),
+              const SizedBox(height: 12),
+            ],
           ),
-          const SizedBox(height: 18),
-          ChunkyButton(
-            color: GameColors.purple,
-            depth: 6,
-            onTap: onContinue,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.play_circle_fill_rounded, color: Colors.white),
-                SizedBox(width: 8),
-                Text('WATCH & CONTINUE',
+        ),
+      ),
+    );
+  }
+
+  Widget _panel() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 380),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [GameColors.headerBlue, GameColors.headerBlueDark],
+                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                ),
+                child: const Text('Level Failed',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                         color: Colors.white,
+                        fontSize: 26,
                         fontWeight: FontWeight.w900,
-                        fontSize: 16)),
-              ],
-            ),
+                        shadows: [
+                          Shadow(color: Colors.black26, offset: Offset(0, 2))
+                        ])),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                decoration: const BoxDecoration(
+                  color: _failPanel,
+                  borderRadius:
+                      BorderRadius.vertical(bottom: Radius.circular(26)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _failInner,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const _PulseHeart(size: 72),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('GET MORE LIVES!',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ReviveTile(
+                            color: GameColors.purple,
+                            amount: '+1',
+                            actionTop: 'GET',
+                            actionBottom: 'FREE',
+                            video: true,
+                            onTap: widget.onWatch,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _ReviveTile(
+                            color: GameColors.green,
+                            amount: '+3',
+                            actionTop: 'GET',
+                            actionBottom: '${widget.buyCost}',
+                            coin: true,
+                            onTap: widget.onBuy,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          ChunkyButton(
-            color: GameColors.green,
-            depth: 6,
-            onTap: onReplay,
-            child: const Text('REPLAY',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18)),
+          Positioned(
+            top: 30,
+            right: -6,
+            child: ChunkyCircleButton(
+              icon: Icons.close_rounded,
+              color: GameColors.red,
+              size: 38,
+              onTap: () {
+                Navigator.of(context).pop();
+                widget.onGiveUp();
+              },
+            ),
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _HudPill extends StatelessWidget {
+  const _HudPill({required this.icon, required this.label, this.trailing});
+  final Widget icon;
+  final String label;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.only(left: 4, right: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF202A44),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17)),
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            Text(trailing!,
+                style: const TextStyle(
+                    color: Color(0xFFAEB9D4),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One revive option — a heart "+N" badge beside a GET / value action.
+class _ReviveTile extends StatelessWidget {
+  const _ReviveTile({
+    required this.color,
+    required this.amount,
+    required this.actionTop,
+    required this.actionBottom,
+    required this.onTap,
+    this.video = false,
+    this.coin = false,
+  });
+  final Color color;
+  final String amount;
+  final String actionTop;
+  final String actionBottom;
+  final VoidCallback onTap;
+  final bool video;
+  final bool coin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
+      children: [
+        ChunkyButton(
+          color: color,
+          depth: 6,
+          radius: 16,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          onTap: onTap,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Heart + amount badge.
+              SizedBox(
+                width: 38,
+                height: 38,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const HeartIcon(size: 34),
+                    Text(amount,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            shadows: [
+                              Shadow(color: Color(0x99000000), blurRadius: 2)
+                            ])),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(actionTop,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (coin) ...[
+                          const CoinIcon(size: 16),
+                          const SizedBox(width: 3),
+                        ],
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(actionBottom,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (video)
+          Positioned(
+            top: -10,
+            left: -6,
+            child: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: const BoxDecoration(
+                color: Color(0xFF3E7BE8),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.play_arrow_rounded,
+                  color: Colors.white, size: 16),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The bottom "SAFETY NET OFFER" upsell tile.
+class _SafetyNetTile extends StatelessWidget {
+  const _SafetyNetTile({required this.buyCost, required this.onBuy});
+  final String buyCost;
+  final VoidCallback onBuy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: GameColors.purple,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: GameColors.star, width: 3),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Title tab.
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: GameColors.star,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text('SAFETY NET OFFER',
+                style: TextStyle(
+                    color: Color(0xFF7A4E00),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+            child: Row(
+              children: [
+                const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppImage(AppImages.pack50000,
+                        size: 60,
+                        fallback: Text('💰', style: TextStyle(fontSize: 40))),
+                    Text('2400',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900)),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                const _OfferPerk(),
+                const Spacer(),
+                ChunkyButton(
+                  color: GameColors.green,
+                  depth: 5,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  onTap: onBuy,
+                  child: Text(buyCost,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfferPerk extends StatelessWidget {
+  const _OfferPerk();
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Perk(PowerUp.magic),
+        _Perk(PowerUp.hint),
+        _Perk(PowerUp.eraser),
+      ],
+    );
+  }
+}
+
+class _Perk extends StatelessWidget {
+  const _Perk(this.power);
+  final PowerUp power;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(width: 26, height: 26, child: PowerIcon(power, size: 26)),
+          const Text('x1',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
 }

@@ -90,3 +90,14 @@ const List<ShopProduct> kBundles = [
 
 /// Reward for watching a rewarded video.
 const int kWatchAdCoins = 50;
+
+/// The "safety net" upsell shown on the Level-Failed screen.
+const ShopProduct kSafetyNetOffer = ShopProduct(
+  id: 'safety_net',
+  title: 'Safety Net',
+  priceLabel: 'BDT 700',
+  coins: 2400,
+  magic: 1,
+  hint: 1,
+  eraser: 1,
+);

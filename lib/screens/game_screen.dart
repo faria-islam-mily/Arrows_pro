@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../data/levels.dart';
 import '../data/palettes.dart';
+import '../data/shop_catalog.dart';
 import '../game/game_controller.dart';
 import '../models/level.dart';
 import '../models/power_up.dart';
 import '../services/ads_service.dart';
 import '../services/feedback_service.dart';
+import '../services/shop_service.dart';
 import '../state/app_scope.dart';
 import '../widgets/ad_banner.dart';
 import '../widgets/app_image.dart';
@@ -313,31 +315,44 @@ class _GameScreenState extends State<GameScreen>
   void _showFail() {
     showLevelFailed(
       context,
-      onContinue: () async {
+      buyCost: kReviveCost,
+      // Free rewarded video → continue with 1 life.
+      onWatch: () async {
         final earned = await AdsService.showRewarded();
         if (!mounted) return;
         if (earned) {
           Navigator.of(context).pop();
-          _continueWithVideo();
+          _continue(1);
         } else {
           _toast('Ad not ready yet — try again in a moment.');
         }
       },
-      onReplay: () {
-        Navigator.of(context).pop();
-        AppScope.read(context).loseLife(); // failing the level costs a life
+      // Spend coins → continue with full lives.
+      onBuy: () async {
+        final state = AppScope.read(context);
+        if (await state.spendCoins(kReviveCost)) {
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          _continue(3);
+        } else if (mounted) {
+          _toast('Not enough coins.');
+        }
+      },
+      // X → give up: lose a life and restart (the overlay is already popped).
+      onGiveUp: () {
+        AppScope.read(context).loseLife();
         _restart();
       },
+      // Safety-net upsell: buy the bundle (grants coins + power-ups).
+      onOffer: () => buyShopProduct(context, kSafetyNetOffer),
     );
   }
 
-  // Placeholder for a rewarded video ad: refill hearts and keep the current
-  // board so the player continues right where they ran out (progress kept).
-  // TODO: gate behind a real rewarded ad (AdMob / Unity Ads).
-  void _continueWithVideo() {
+  // Continue from the current board with [lives] in-level hearts (progress kept).
+  void _continue(int lives) {
     _feedback?.tick();
     setState(() {
-      _lives = 3;
+      _lives = lives;
       _completed = false;
     });
   }
