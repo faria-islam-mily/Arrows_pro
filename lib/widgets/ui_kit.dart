@@ -201,7 +201,12 @@ class GameDialog extends StatelessWidget {
                           color: GameColors.panel,
                           borderRadius: BorderRadius.all(Radius.circular(26)),
                         ),
-                        child: child,
+                        // A transparent Material so inputs (TextField, ink)
+                        // inside any GameDialog have the ancestor they require.
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: child,
+                        ),
                       ),
                     ),
                   ],
