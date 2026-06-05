@@ -40,6 +40,7 @@ class AppState extends ChangeNotifier {
   static const _kAvatar = 'avatarIndex';
   static const _kFrame = 'frameIndex';
   static const _kProfileDone = 'profileDone';
+  static const _kLanguage = 'languageName';
 
   int _themeIndex = 0;
   int _unlockedLevel = 1; // highest level number the player may open
@@ -86,6 +87,9 @@ class AppState extends ChangeNotifier {
   int _avatarIndex = 0;
   int _frameIndex = 0;
   bool _profileDone = false; // shown the first-run name/avatar flow yet?
+  // Display language. Currently a saved UI preference (the picker reflects it);
+  // wiring it to full string translation is a future step.
+  String _language = 'English';
 
   /// The level at which each power is introduced (gradual rollout).
   static const Map<PowerUp, int> _unlockLevel = {
@@ -134,6 +138,13 @@ class AppState extends ChangeNotifier {
   int get avatarIndex => _avatarIndex;
   int get frameIndex => _frameIndex;
   bool get profileDone => _profileDone;
+  String get language => _language;
+
+  Future<void> setLanguage(String name) async {
+    _language = name;
+    notifyListeners();
+    await _storage.setString(_kLanguage, name);
+  }
 
   Future<void> setUsername(String name) async {
     _username = name.trim();
@@ -397,6 +408,7 @@ class AppState extends ChangeNotifier {
     _avatarIndex = _storage.getInt(_kAvatar, 0);
     _frameIndex = _storage.getInt(_kFrame, 0);
     _profileDone = _storage.getBool(_kProfileDone, false);
+    _language = _storage.getString(_kLanguage) ?? 'English';
     // Star total is cached; on first run (or upgrade) seed it by summing once.
     _starsTotal = _storage.getInt(_kStarsTotal, -1);
     if (_starsTotal < 0) {

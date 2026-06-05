@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../screens/support_screen.dart';
 import '../services/audio_service.dart';
 import '../services/iap_service.dart';
 import '../state/app_scope.dart';
 import '../theme/game_colors.dart';
 import 'app_image.dart';
+import 'language_dialog.dart';
 import 'theme_picker.dart';
 import 'ui_kit.dart';
 
@@ -29,15 +31,18 @@ Future<void> showSettingsDialog(BuildContext context) {
       children: [
         const _ControlsBlock(),
         const SizedBox(height: 16),
-        _PillButton(
-          label: 'English',
-          icon: Icons.translate_rounded,
-          onTap: () => _toast(context, 'More languages coming soon!'),
-        ),
+        const _LanguageButton(),
         const SizedBox(height: 10),
         _PillButton(
           label: 'SUPPORT',
-          onTap: () => _toast(context, 'Contact: support@arrowspro.game'),
+          icon: Icons.help_outline_rounded,
+          onTap: () {
+            final nav = Navigator.of(context);
+            nav.pop(); // close settings, then open the help center
+            nav.push(
+              MaterialPageRoute(builder: (_) => const SupportScreen()),
+            );
+          },
         ),
         const SizedBox(height: 14),
         _LinkButton(
@@ -455,6 +460,20 @@ class _ThemeRow extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Buttons
 // ---------------------------------------------------------------------------
+
+/// The language row in Settings — shows the saved language and opens the
+/// picker. Reads [context.appState] so it updates live after a new pick.
+class _LanguageButton extends StatelessWidget {
+  const _LanguageButton();
+  @override
+  Widget build(BuildContext context) {
+    return _PillButton(
+      label: context.appState.language.toUpperCase(),
+      icon: Icons.translate_rounded,
+      onTap: () => showLanguageDialog(context),
+    );
+  }
+}
 
 class _PillButton extends StatelessWidget {
   const _PillButton({required this.label, this.icon, required this.onTap});

@@ -31,6 +31,9 @@ class AdsService {
 
   static RewardedAd? _rewarded;
   static bool _loadingRewarded = false;
+  // Resolved whenever a load finishes (success OR failure), so a waiting
+  // [showRewarded] can wake up the moment an ad is ready.
+  static Completer<void>? _loadWaiter;
 
   /// Preload a rewarded ad (no-op if one is ready or already loading).
   static void loadRewarded() {
@@ -43,23 +46,38 @@ class AdsService {
         onAdLoaded: (ad) {
           _rewarded = ad;
           _loadingRewarded = false;
+          _wakeLoadWaiter();
         },
         onAdFailedToLoad: (_) {
           _rewarded = null;
           _loadingRewarded = false;
+          _wakeLoadWaiter();
         },
       ),
     );
   }
 
+  static void _wakeLoadWaiter() {
+    final w = _loadWaiter;
+    _loadWaiter = null;
+    if (w != null && !w.isCompleted) w.complete();
+  }
+
   /// Show a rewarded ad. Resolves true only if the user earned the reward.
-  /// If no ad is ready it kicks off a load and returns false immediately.
+  /// If none is ready yet it kicks off a load and waits briefly for it (so the
+  /// "watch a video" reward reliably plays instead of failing on the first tap).
   static Future<bool> showRewarded() async {
-    final ad = _rewarded;
-    if (ad == null) {
+    if (_rewarded == null) {
       loadRewarded();
-      return false;
+      // Wait up to a few seconds for the in-flight load to finish.
+      if (_loadingRewarded) {
+        _loadWaiter ??= Completer<void>();
+        await _loadWaiter!.future
+            .timeout(const Duration(seconds: 5), onTimeout: () {});
+      }
     }
+    final ad = _rewarded;
+    if (ad == null) return false;
     _rewarded = null;
     final completer = Completer<bool>();
     var earned = false;

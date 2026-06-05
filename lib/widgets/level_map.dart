@@ -5,11 +5,11 @@ import '../data/worlds.dart';
 import '../screens/game_screen.dart';
 import '../screens/piggy_bank_screen.dart';
 import '../state/app_scope.dart';
-import '../state/main_nav.dart';
 import '../theme/app_images.dart';
 import '../theme/game_colors.dart';
 import 'app_image.dart';
 import 'game_dialogs.dart';
+import 'promo_dialogs.dart';
 import 'ui_kit.dart';
 
 /// How often a star-gate sits on the path (every N levels).
@@ -631,19 +631,19 @@ class _SideRail extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         if (!adsRemoved) ...[
-          const _RailButton(
+          _RailButton(
             color: GameColors.blue,
             image: AppImages.noAds,
             label: 'NO ADS',
-            onTap: openShop,
+            onTap: () => showRemoveAds(context),
           ),
           const SizedBox(height: 12),
         ],
-        const _RailButton(
-          color: Color(0xFFF2A33C),
+        _RailButton(
+          color: const Color(0xFFF2A33C),
           emoji: '🪙',
           label: 'SALE',
-          onTap: openShop,
+          onTap: () => showSpecialOffer(context),
         ),
       ],
     );

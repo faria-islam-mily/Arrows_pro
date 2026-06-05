@@ -6,6 +6,7 @@ import '../theme/game_colors.dart';
 import '../widgets/daily_reward_sheet.dart';
 import '../widgets/level_map.dart';
 import '../widgets/profile_dialogs.dart';
+import '../widgets/promo_dialogs.dart';
 import '../widgets/settings_dialog.dart';
 import '../widgets/top_hud.dart';
 
@@ -59,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
               bottom: false,
               child: TopHud(
                 onCoins: openShop,
-                onLives: openShop,
+                onLives: () => showLivesDialog(context),
                 onProfile: () => showProfileDialog(context),
                 onSettings: () => showSettingsDialog(context),
               ),

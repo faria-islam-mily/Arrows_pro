@@ -91,13 +91,15 @@ const List<ShopProduct> kBundles = [
 /// Reward for watching a rewarded video.
 const int kWatchAdCoins = 50;
 
-/// The "safety net" upsell shown on the Level-Failed screen.
+/// Our custom "safety net" upsell shown on the Level-Failed screen — a strong
+/// 2x-value bundle: a big coin stack, 1h of infinite lives, and every power-up.
 const ShopProduct kSafetyNetOffer = ShopProduct(
   id: 'safety_net',
-  title: 'Safety Net',
-  priceLabel: 'BDT 700',
-  coins: 2400,
-  magic: 1,
-  hint: 1,
-  eraser: 1,
+  title: 'Rescue Pack',
+  priceLabel: 'BDT 490',
+  coins: 5000,
+  infiniteHours: 1,
+  magic: 2,
+  hint: 2,
+  eraser: 2,
 );

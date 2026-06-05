@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../data/shop_catalog.dart';
 import '../models/power_up.dart';
 import '../services/ads_service.dart';
 import '../state/app_scope.dart';
@@ -475,7 +476,8 @@ Future<void> showLevelFailed(
   BuildContext context, {
   required VoidCallback onWatch, // free rewarded video -> continue
   required VoidCallback onBuy, // spend coins -> continue
-  required VoidCallback onGiveUp, // X -> replay (lose a life)
+  required VoidCallback onResume, // RESUME on the failed page -> retry
+  required VoidCallback onHome, // final X -> back to the level map
   required VoidCallback onOffer, // buy the safety-net bundle -> continue
   required int buyCost,
 }) {
@@ -486,7 +488,8 @@ Future<void> showLevelFailed(
     builder: (ctx) => _LevelFailedOverlay(
       onWatch: onWatch,
       onBuy: onBuy,
-      onGiveUp: onGiveUp,
+      onResume: onResume,
+      onHome: onHome,
       onOffer: onOffer,
       buyCost: buyCost,
     ),
@@ -497,11 +500,12 @@ class _LevelFailedOverlay extends StatefulWidget {
   const _LevelFailedOverlay({
     required this.onWatch,
     required this.onBuy,
-    required this.onGiveUp,
+    required this.onResume,
+    required this.onHome,
     required this.onOffer,
     required this.buyCost,
   });
-  final VoidCallback onWatch, onBuy, onGiveUp, onOffer;
+  final VoidCallback onWatch, onBuy, onResume, onHome, onOffer;
   final int buyCost;
 
   @override
@@ -510,10 +514,13 @@ class _LevelFailedOverlay extends StatefulWidget {
 
 class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
   Timer? _timer;
+  // 0 = out of lives, 1 = "you'll lose a life" warning, 2 = level failed.
+  int _step = 0;
 
   @override
   void initState() {
     super.initState();
+    // Ticks the "time to next life" countdown shown in the HUD pill.
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -523,6 +530,21 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  // The escalating close behaviour the user asked for:
+  // out of lives -> warning -> (lose a life) -> level failed -> home.
+  Future<void> _onX() async {
+    if (_step == 0) {
+      setState(() => _step = 1);
+    } else if (_step == 1) {
+      final app = context.appState;
+      await app.loseLife(); // confirming the warning costs the life
+      if (mounted) setState(() => _step = 2);
+    } else {
+      Navigator.of(context).pop();
+      widget.onHome();
+    }
   }
 
   @override
@@ -554,7 +576,8 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _HudPill(icon: const CoinIcon(size: 30), label: '${state.coins}'),
+                  _HudPill(
+                      icon: const CoinIcon(size: 30), label: '${state.coins}'),
                   _HudPill(
                     icon: const HeartIcon(size: 30),
                     label: '${state.lives}',
@@ -562,8 +585,67 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
                   ),
                 ],
               ),
-              Expanded(child: Center(child: _panel())),
-              _SafetyNetTile(buyCost: 'BDT 700', onBuy: widget.onOffer),
+              // Card + offer move together as one centred group, so the offer
+              // sits directly under the card instead of pinned to the bottom.
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    // Don't clip — the close X floats just outside the card's
+                    // top-right corner and must not be cropped.
+                    clipBehavior: Clip.none,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Breathing room so the close X (which floats above the
+                        // card's top edge) isn't clipped by the scroll view.
+                        const SizedBox(height: 16),
+                        // The card slides in from the side as the step changes.
+                        // The X lives in this outer Stack — NOT inside the
+                        // AnimatedSwitcher — so its internal clip can't crop it.
+                        Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.topRight,
+                          children: [
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 360),
+                              switchInCurve: Curves.easeOutBack,
+                              switchOutCurve: Curves.easeIn,
+                              transitionBuilder: _slideFromSide,
+                              child: KeyedSubtree(
+                                key: ValueKey(_step),
+                                child: _panelForStep(),
+                              ),
+                            ),
+                            Positioned(
+                              top: -10,
+                              right: -6,
+                              child: ChunkyCircleButton(
+                                icon: Icons.close_rounded,
+                                color: GameColors.red,
+                                size: 38,
+                                onTap: _onX,
+                              ),
+                            ),
+                          ],
+                        ),
+                        // The custom offer sits just below the card on the
+                        // decision pages, but slides away during the warning.
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          transitionBuilder: _slideFromSide,
+                          child: _step == 1
+                              ? const SizedBox(key: ValueKey('no-offer'), width: 1)
+                              : Padding(
+                                  key: const ValueKey('offer'),
+                                  padding: const EdgeInsets.only(top: 14),
+                                  child: _SafetyNetTile(onBuy: widget.onOffer),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
             ],
           ),
@@ -572,105 +654,224 @@ class _LevelFailedOverlayState extends State<_LevelFailedOverlay> {
     );
   }
 
-  Widget _panel() {
+  // Incoming card enters from the right and fades in; the outgoing one leaves
+  // to the right too, so each step feels like it "comes from the side".
+  Widget _slideFromSide(Widget child, Animation<double> animation) {
+    final offset = Tween<Offset>(
+      begin: const Offset(0.55, 0),
+      end: Offset.zero,
+    ).animate(animation);
+    return ClipRect(
+      child: SlideTransition(
+        position: offset,
+        child: FadeTransition(opacity: animation, child: child),
+      ),
+    );
+  }
+
+  Widget _panelForStep() {
+    switch (_step) {
+      case 1:
+        return _warningPanel();
+      case 2:
+        return _failedPanel();
+      default:
+        return _outOfLivesPanel();
+    }
+  }
+
+  /// Shared card frame: coloured header + dark body. The close X is drawn
+  /// separately in [build] (outside the AnimatedSwitcher/scroll clip) so it can
+  /// float over the corner without being cropped.
+  Widget _card({
+    required String title,
+    required List<Color> headerColors,
+    required Widget body,
+  }) {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 380),
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topCenter,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [GameColors.headerBlue, GameColors.headerBlueDark],
-                  ),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-                ),
-                child: const Text('Level Failed',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        shadows: [
-                          Shadow(color: Colors.black26, offset: Offset(0, 2))
-                        ])),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: headerColors,
               ),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                decoration: const BoxDecoration(
-                  color: _failPanel,
-                  borderRadius:
-                      BorderRadius.vertical(bottom: Radius.circular(26)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(26)),
+            ),
+            child: Text(title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                    shadows: [
+                      Shadow(color: Colors.black26, offset: Offset(0, 2))
+                    ])),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            decoration: const BoxDecoration(
+              color: _failPanel,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(26)),
+            ),
+            child: body,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Step 0 — out of lives: two ways to keep playing from the same state.
+  Widget _outOfLivesPanel() {
+    return _card(
+      title: 'OUT OF LIVES',
+      headerColors: const [GameColors.headerBlue, GameColors.headerBlueDark],
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: _failInner,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const _PulseHeart(size: 72),
+          ),
+          const SizedBox(height: 12),
+          const Text('GET MORE LIVES!',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _ReviveTile(
+                  color: GameColors.purple,
+                  amount: '+1',
+                  action: 'GET',
+                  value: 'FREE',
+                  video: true,
+                  onTap: widget.onWatch,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _failInner,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: const _PulseHeart(size: 72),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('GET MORE LIVES!',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ReviveTile(
-                            color: GameColors.purple,
-                            amount: '+1',
-                            actionTop: 'GET',
-                            actionBottom: 'FREE',
-                            video: true,
-                            onTap: widget.onWatch,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _ReviveTile(
-                            color: GameColors.green,
-                            amount: '+3',
-                            actionTop: 'GET',
-                            actionBottom: '${widget.buyCost}',
-                            coin: true,
-                            onTap: widget.onBuy,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ReviveTile(
+                  color: GameColors.green,
+                  amount: '+3',
+                  action: 'GET',
+                  value: '${widget.buyCost}',
+                  coin: true,
+                  onTap: widget.onBuy,
                 ),
               ),
             ],
           ),
-          Positioned(
-            top: 30,
-            right: -6,
-            child: ChunkyCircleButton(
-              icon: Icons.close_rounded,
-              color: GameColors.red,
-              size: 38,
+        ],
+      ),
+    );
+  }
+
+  // Step 1 — the "you'll lose a life" warning. A friendly way back, or X to
+  // confirm leaving (which costs the life).
+  Widget _warningPanel() {
+    return _card(
+      title: 'WAIT!',
+      headerColors: const [Color(0xFFF2A33C), Color(0xFFD9822B)],
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 4),
+          const _PulseHeart(size: 64),
+          const SizedBox(height: 12),
+          const Text('You’ll lose a life\nif you leave now!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  height: 1.2,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ChunkyButton(
+              color: GameColors.green,
+              depth: 6,
+              radius: 16,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              onTap: () => setState(() => _step = 0),
+              child: const Text('GO BACK',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900)),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text('Tap ✕ to leave anyway',
+              style: TextStyle(
+                  color: Color(0xFFAEB9D4),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  // Step 2 — level failed: a single big RESUME option, or X to the level map.
+  Widget _failedPanel() {
+    return _card(
+      title: 'LEVEL FAILED',
+      headerColors: const [Color(0xFFE85C5C), Color(0xFFC23B3B)],
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 4),
+          const _PulseHeart(size: 64),
+          const SizedBox(height: 12),
+          const Text('Don’t give up —\ntry this level again!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  height: 1.2,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ChunkyButton(
+              color: GameColors.green,
+              depth: 6,
+              radius: 16,
+              padding: const EdgeInsets.symmetric(vertical: 14),
               onTap: () {
                 Navigator.of(context).pop();
-                widget.onGiveUp();
+                widget.onResume();
               },
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.refresh_rounded, color: Colors.white, size: 24),
+                  SizedBox(width: 8),
+                  Text('RESUME',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900)),
+                ],
+              ),
             ),
           ),
         ],
@@ -719,21 +920,22 @@ class _HudPill extends StatelessWidget {
   }
 }
 
-/// One revive option — a heart "+N" badge beside a GET / value action.
+/// One revive option — a big heart "+N" badge above a GET / value action.
+/// Laid out vertically and large so the tile reads full, not "empty".
 class _ReviveTile extends StatelessWidget {
   const _ReviveTile({
     required this.color,
     required this.amount,
-    required this.actionTop,
-    required this.actionBottom,
+    required this.action,
+    required this.value,
     required this.onTap,
     this.video = false,
     this.coin = false,
   });
   final Color color;
   final String amount;
-  final String actionTop;
-  final String actionBottom;
+  final String action;
+  final String value;
   final VoidCallback onTap;
   final bool video;
   final bool coin;
@@ -747,24 +949,24 @@ class _ReviveTile extends StatelessWidget {
         ChunkyButton(
           color: color,
           depth: 6,
-          radius: 16,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          radius: 18,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
           onTap: onTap,
-          child: Row(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Heart + amount badge.
+              // Big heart + amount badge.
               SizedBox(
-                width: 38,
-                height: 38,
+                width: 56,
+                height: 56,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    const HeartIcon(size: 34),
+                    const HeartIcon(size: 56),
                     Text(amount,
                         style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 13,
+                            fontSize: 20,
                             fontWeight: FontWeight.w900,
                             shadows: [
                               Shadow(color: Color(0x99000000), blurRadius: 2)
@@ -772,37 +974,33 @@ class _ReviveTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(actionTop,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900)),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (coin) ...[
-                          const CoinIcon(size: 16),
-                          const SizedBox(width: 3),
-                        ],
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(actionBottom,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w900)),
-                          ),
-                        ),
-                      ],
-                    ),
+              const SizedBox(height: 8),
+              Text(action,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      height: 1,
+                      fontWeight: FontWeight.w900)),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (coin) ...[
+                    const CoinIcon(size: 22),
+                    const SizedBox(width: 4),
                   ],
-                ),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(value,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              height: 1,
+                              fontWeight: FontWeight.w900)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -812,13 +1010,16 @@ class _ReviveTile extends StatelessWidget {
             top: -10,
             left: -6,
             child: Container(
-              padding: const EdgeInsets.all(5),
+              padding: const EdgeInsets.all(6),
               decoration: const BoxDecoration(
                 color: Color(0xFF3E7BE8),
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: Color(0x55000000), blurRadius: 4)
+                ],
               ),
               child: const Icon(Icons.play_arrow_rounded,
-                  color: Colors.white, size: 16),
+                  color: Colors.white, size: 20),
             ),
           ),
       ],
@@ -826,111 +1027,190 @@ class _ReviveTile extends StatelessWidget {
   }
 }
 
-/// The bottom "SAFETY NET OFFER" upsell tile.
-class _SafetyNetTile extends StatelessWidget {
-  const _SafetyNetTile({required this.buyCost, required this.onBuy});
-  final String buyCost;
+/// The bottom upsell tile — our own customized "Rescue Pack" offer
+/// ([kSafetyNetOffer]). Big, full, and gently pulsing to catch the eye.
+class _SafetyNetTile extends StatefulWidget {
+  const _SafetyNetTile({required this.onBuy});
   final VoidCallback onBuy;
 
   @override
+  State<_SafetyNetTile> createState() => _SafetyNetTileState();
+}
+
+class _SafetyNetTileState extends State<_SafetyNetTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: GameColors.purple,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: GameColors.star, width: 3),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Title tab.
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            decoration: BoxDecoration(
-              color: GameColors.star,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text('SAFETY NET OFFER',
-                style: TextStyle(
-                    color: Color(0xFF7A4E00),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900)),
+    const offer = kSafetyNetOffer;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Transform.scale(scale: 1 + t * 0.02, child: child);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF7C53D4), Color(0xFF5B3BC0)],
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-            child: Row(
-              children: [
-                const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppImage(AppImages.pack50000,
-                        size: 60,
-                        fallback: Text('💰', style: TextStyle(fontSize: 40))),
-                    Text('2400',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900)),
-                  ],
-                ),
-                const SizedBox(width: 8),
-                const _OfferPerk(),
-                const Spacer(),
-                ChunkyButton(
-                  color: GameColors.green,
-                  depth: 5,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  onTap: onBuy,
-                  child: Text(buyCost,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: GameColors.star, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: GameColors.star.withValues(alpha: 0.45),
+              blurRadius: 16,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Title tab.
+            Container(
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+              decoration: BoxDecoration(
+                color: GameColors.star,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x33000000), blurRadius: 4)
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star_rounded,
+                      color: Color(0xFF7A4E00), size: 20),
+                  const SizedBox(width: 5),
+                  Text(offer.title.toUpperCase(),
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
+                          color: Color(0xFF7A4E00),
+                          fontSize: 17,
+                          letterSpacing: 0.4,
                           fontWeight: FontWeight.w900)),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+              child: Row(
+                children: [
+                  // Coin stack reward.
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const AppImage(AppImages.pack50000,
+                          size: 72,
+                          fallback: Text('💰', style: TextStyle(fontSize: 52))),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CoinIcon(size: 20),
+                          const SizedBox(width: 4),
+                          Text('${offer.coins}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 10),
+                  // Power-up + infinite-lives perks.
+                  const Expanded(child: _OfferPerks(offer)),
+                  const SizedBox(width: 6),
+                  // Buy button — pulsing glow ties it to the tile animation.
+                  ChunkyButton(
+                    color: GameColors.green,
+                    depth: 6,
+                    radius: 16,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 16),
+                    onTap: widget.onBuy,
+                    child: Text(offer.priceLabel,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _OfferPerk extends StatelessWidget {
-  const _OfferPerk();
+/// The grid of perks granted by an offer (infinite lives + power-ups).
+class _OfferPerks extends StatelessWidget {
+  const _OfferPerks(this.offer);
+  final ShopProduct offer;
+
   @override
   Widget build(BuildContext context) {
-    return const Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _Perk(PowerUp.magic),
-        _Perk(PowerUp.hint),
-        _Perk(PowerUp.eraser),
-      ],
+    final perks = <Widget>[
+      if (offer.infiniteHours > 0)
+        _Perk(
+            icon: const HeartIcon(size: 30),
+            label: '∞${offer.infiniteHours}h'),
+      if (offer.magic > 0)
+        _Perk(icon: const PowerIcon(PowerUp.magic, size: 30), label: 'x${offer.magic}'),
+      if (offer.hint > 0)
+        _Perk(icon: const PowerIcon(PowerUp.hint, size: 30), label: 'x${offer.hint}'),
+      if (offer.eraser > 0)
+        _Perk(icon: const PowerIcon(PowerUp.eraser, size: 30), label: 'x${offer.eraser}'),
+      if (offer.undo > 0)
+        _Perk(icon: const PowerIcon(PowerUp.undo, size: 30), label: 'x${offer.undo}'),
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      alignment: WrapAlignment.center,
+      children: perks,
     );
   }
 }
 
 class _Perk extends StatelessWidget {
-  const _Perk(this.power);
-  final PowerUp power;
+  const _Perk({required this.icon, required this.label});
+  final Widget icon;
+  final String label;
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(width: 26, height: 26, child: PowerIcon(power, size: 26)),
-          const Text('x1',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900)),
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(width: 30, height: 30, child: Center(child: icon)),
+        const SizedBox(height: 1),
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900)),
+      ],
     );
   }
 }

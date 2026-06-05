@@ -338,11 +338,13 @@ class _GameScreenState extends State<GameScreen>
           _toast('Not enough coins.');
         }
       },
-      // X → give up: lose a life and restart (the overlay is already popped).
-      onGiveUp: () {
-        AppScope.read(context).loseLife();
-        _restart();
-      },
+      // RESUME on the failed page → retry the level from the start. The life
+      // was already taken by the overlay's warning step, so just reset the
+      // board (the overlay has already popped itself).
+      onResume: _restart,
+      // Final X on the failed page → back to the level map. No extra confirm
+      // or life loss here; the overlay already handled both.
+      onHome: () => Navigator.of(context).pop(),
       // Safety-net upsell: buy the bundle (grants coins + power-ups).
       onOffer: () => buyShopProduct(context, kSafetyNetOffer),
     );
@@ -432,7 +434,11 @@ class _GameScreenState extends State<GameScreen>
             alignment: Alignment.topCenter,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.fromLTRB(16, topInset + 8, 12, 12),
+              // Pull the content up into the notch band — the centre (where a
+              // cutout sits) is empty, so only the side label rises beside it
+              // while the progress row stays just below the cutout.
+              padding: EdgeInsets.fromLTRB(16, (topInset - 16).clamp(8.0, 999.0),
+                  12, 10),
               decoration: BoxDecoration(
                 color: palette.surface,
                 borderRadius:

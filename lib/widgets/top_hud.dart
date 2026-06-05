@@ -32,13 +32,20 @@ class TopHud extends StatefulWidget {
   State<TopHud> createState() => _TopHudState();
 }
 
-class _TopHudState extends State<TopHud> {
+class _TopHudState extends State<TopHud>
+    with SingleTickerProviderStateMixin {
   Timer? _timer;
-  static const double _icon = 46; // all HUD icons share one size — balanced
+  late final AnimationController _shine;
+  static const double _icon = 42; // all HUD icons share one size — balanced
 
   @override
   void initState() {
     super.initState();
+    // Drives a slow glossy shine that sweeps across every pill.
+    _shine = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3200),
+    )..repeat();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       AppScope.read(context).tick();
@@ -48,6 +55,7 @@ class _TopHudState extends State<TopHud> {
 
   @override
   void dispose() {
+    _shine.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -73,15 +81,15 @@ class _TopHudState extends State<TopHud> {
     final lifeLabel = state.hasInfiniteLives ? '∞' : '${state.lives}';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 4),
       child: Row(
         children: [
-          GestureDetector(
+          _TapScale(
             onTap: widget.onProfile,
             child: AvatarBadge(
               avatarIndex: state.avatarIndex,
               frameIndex: state.frameIndex,
-              size: 48,
+              size: 46,
               showDot: true,
             ),
           ),
@@ -90,6 +98,7 @@ class _TopHudState extends State<TopHud> {
           Expanded(
             flex: 5,
             child: _HudPill(
+              shine: _shine,
               leading: const _CoinWithPlus(size: _icon),
               label: '${state.coins}',
               onTap: widget.onCoins,
@@ -100,6 +109,7 @@ class _TopHudState extends State<TopHud> {
           Expanded(
             flex: 6,
             child: _HudPill(
+              shine: _shine,
               leading: _HeartWithNumber(size: _icon, number: lifeLabel),
               trailing: lifeRight,
               onTap: widget.onLives,
@@ -110,88 +120,250 @@ class _TopHudState extends State<TopHud> {
           Expanded(
             flex: 4,
             child: _HudPill(
+              shine: _shine,
               leading: const StarIcon(size: _icon),
               label: '${state.starTotal}',
               onTap: widget.onStars,
             ),
           ),
           const SizedBox(width: 5),
-          _GearButton(onTap: widget.onSettings),
+          _GearButton(shine: _shine, onTap: widget.onSettings),
         ],
       ),
     );
   }
 }
 
-/// A dark chunky pill: a big 3D icon on the left, then an animated count and/or
-/// a trailing status string. The whole content is in a FittedBox so it scales
-/// down rather than overflowing when space is tight.
+/// The bright HUD accent blue — ties the pills into the glossy, white-bordered
+/// button family used by the side rail (PIGGY / NO ADS / SALE) and the nav bar.
+const Color _hudBlue = Color(0xFF3F8DEC);
+
+/// The shared glossy surface: a vertical blue gradient, a crisp white border, a
+/// chunky bottom lip + soft ambient shadow, and a sweeping shine — clipped to
+/// [radius] (use a circular radius for the gear).
+Widget _glossBase({
+  required BorderRadius radius,
+  required Animation<double> animation,
+}) {
+  return Container(
+    decoration: BoxDecoration(
+      borderRadius: radius,
+      boxShadow: [
+        // Chunky bottom lip (like the rail buttons).
+        BoxShadow(color: GameColors.darken(_hudBlue, 0.22), offset: const Offset(0, 3)),
+        // Soft ambient shadow.
+        BoxShadow(
+            color: Colors.black.withValues(alpha: 0.20),
+            blurRadius: 7,
+            offset: const Offset(0, 3)),
+      ],
+    ),
+    child: ClipRRect(
+      borderRadius: radius,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [GameColors.lighten(_hudBlue, 0.12), _hudBlue],
+              ),
+              border: Border.all(color: Colors.white, width: 2),
+              borderRadius: radius,
+            ),
+          ),
+          _Shimmer(animation: animation),
+        ],
+      ),
+    ),
+  );
+}
+
+/// A glossy blue pill: a big 3D icon on the left, then an animated count and/or
+/// a trailing status string. The content is in a FittedBox so it scales down
+/// rather than overflowing when space is tight. The shine + border come from
+/// the shared [_glossBase]; the icon may overhang it without being clipped.
 class _HudPill extends StatelessWidget {
   const _HudPill({
     required this.leading,
+    required this.shine,
     this.label,
     this.trailing,
     this.onTap,
   });
 
   final Widget leading;
+  final Animation<double> shine;
   final String? label;
   final String? trailing;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _TapScale(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 52,
-        padding: const EdgeInsets.only(left: 3, right: 10),
-        decoration: BoxDecoration(
-          color: GameColors.hudPill,
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: GameColors.hudPillBorder, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+      child: SizedBox(
+        height: 46,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.centerLeft,
+          children: [
+            Positioned.fill(
+              child: _glossBase(
+                radius: BorderRadius.circular(23),
+                animation: shine,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 3, right: 12),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    leading,
+                    if (label != null) ...[
+                      const SizedBox(width: 6),
+                      _BumpText(
+                        label!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 19,
+                          shadows: [
+                            Shadow(
+                                color: Color(0x55000000),
+                                offset: Offset(0, 1),
+                                blurRadius: 1),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (trailing != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        trailing!,
+                        style: const TextStyle(
+                          color: Color(0xFFE3EDFF),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ],
         ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              leading,
-              if (label != null) ...[
-                const SizedBox(width: 6),
-                _BumpText(
-                  label!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 19,
-                  ),
-                ),
-              ],
-              if (trailing != null) ...[
-                const SizedBox(width: 8),
-                Text(
-                  trailing!,
-                  style: const TextStyle(
-                    color: Color(0xFFAEB9D4),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ],
+      ),
+    );
+  }
+}
+
+/// Press-down scale feedback shared by every interactive HUD element.
+class _TapScale extends StatefulWidget {
+  const _TapScale({required this.child, this.onTap});
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  State<_TapScale> createState() => _TapScaleState();
+}
+
+class _TapScaleState extends State<_TapScale> {
+  bool _down = false;
+  void _set(bool v) {
+    if (_down != v) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => _set(true) : null,
+      onTapUp: enabled
+          ? (_) {
+              _set(false);
+              widget.onTap!();
+            }
+          : null,
+      onTapCancel: () => _set(false),
+      child: AnimatedScale(
+        scale: _down ? 0.92 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// A soft diagonal highlight that sweeps across a gloss surface, then rests for
+/// the remainder of the cycle. Clipped by the surface's [ClipRRect].
+class _Shimmer extends StatelessWidget {
+  const _Shimmer({required this.animation});
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, child) {
+          final v = animation.value;
+          if (v >= 0.34) return const SizedBox.shrink();
+          final t = v / 0.34; // 0..1 sweep, then idle
+          return Align(
+            alignment: Alignment(-1.6 + t * 3.2, 0),
+            child: child,
+          );
+        },
+        child: Transform.rotate(
+          angle: -0.42,
+          child: Container(
+            width: 24,
+            height: 120,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.0),
+                  Colors.white.withValues(alpha: 0.28),
+                  Colors.white.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A small green "+" badge used on tappable resource icons (coins, lives).
+class _PlusBadge extends StatelessWidget {
+  const _PlusBadge({required this.size});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF6FD63B), GameColors.green],
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Icon(Icons.add_rounded, color: Colors.white, size: size * 0.7),
     );
   }
 }
@@ -203,7 +375,6 @@ class _CoinWithPlus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badge = size * 0.5;
     return SizedBox(
       width: size,
       height: size,
@@ -214,21 +385,7 @@ class _CoinWithPlus extends StatelessWidget {
           Positioned(
             right: -2,
             bottom: -2,
-            child: Container(
-              width: badge,
-              height: badge,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFF6FD63B), GameColors.green],
-                ),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-              child: Icon(Icons.add_rounded,
-                  color: Colors.white, size: badge * 0.7),
-            ),
+            child: _PlusBadge(size: size * 0.5),
           ),
         ],
       ),
@@ -236,7 +393,8 @@ class _CoinWithPlus extends StatelessWidget {
   }
 }
 
-/// A big heart with the life count drawn inside it.
+/// A big heart with the life count drawn inside it and a green "+" badge — so,
+/// like the coin, tapping it clearly leads somewhere to get more.
 class _HeartWithNumber extends StatelessWidget {
   const _HeartWithNumber({required this.size, required this.number});
   final double size;
@@ -248,6 +406,7 @@ class _HeartWithNumber extends StatelessWidget {
       width: size,
       height: size,
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
           HeartIcon(size: size),
@@ -265,6 +424,11 @@ class _HeartWithNumber extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+          Positioned(
+            right: -2,
+            bottom: -2,
+            child: _PlusBadge(size: size * 0.5),
           ),
         ],
       ),
@@ -315,29 +479,30 @@ class _BumpTextState extends State<_BumpText>
 }
 
 class _GearButton extends StatelessWidget {
-  const _GearButton({this.onTap});
+  const _GearButton({required this.shine, this.onTap});
+  final Animation<double> shine;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _TapScale(
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         width: 46,
         height: 46,
-        decoration: BoxDecoration(
-          color: GameColors.hudPill,
-          shape: BoxShape.circle,
-          border: Border.all(color: GameColors.hudPillBorder, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              // A circular radius turns the gloss base into a round button.
+              child: _glossBase(
+                radius: BorderRadius.circular(23),
+                animation: shine,
+              ),
             ),
+            const Icon(Icons.settings_rounded, color: Colors.white, size: 24),
           ],
         ),
-        child: const Icon(Icons.settings_rounded, color: Colors.white, size: 24),
       ),
     );
   }
