@@ -150,7 +150,11 @@ class GameDialog extends StatelessWidget {
       curve: Curves.easeOutBack,
       tween: Tween(begin: 0.82, end: 1.0),
       builder: (_, s, child) => Transform.scale(scale: s, child: child),
-      child: Center(
+      // A transparent Material wraps the WHOLE dialog (header included) so the
+      // title Text and any inputs have the Material ancestor they require.
+      child: Material(
+        type: MaterialType.transparency,
+        child: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
           child: Padding(
@@ -227,6 +231,7 @@ class GameDialog extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
       ),
     );

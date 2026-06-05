@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/levels.dart';
+import '../data/palettes.dart';
 import '../game/game_controller.dart';
 import '../models/level.dart';
 import '../models/power_up.dart';
@@ -19,6 +20,7 @@ import '../widgets/power_intro_overlay.dart';
 import '../widgets/level_thumbnail.dart';
 import '../widgets/settings_dialog.dart';
 import '../widgets/tutorial_overlay.dart';
+import '../widgets/ui_kit.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key, required this.level});
@@ -387,7 +389,6 @@ class _GameScreenState extends State<GameScreen>
     final palette = context.palette;
     final progress = _game.progress;
     final state = context.appState;
-    final coins = state.coins;
     final topInset = MediaQuery.of(context).padding.top;
 
     return Scaffold(
@@ -416,7 +417,7 @@ class _GameScreenState extends State<GameScreen>
             alignment: Alignment.topCenter,
             child: Container(
               width: double.infinity,
-              padding: EdgeInsets.fromLTRB(6, topInset + 6, 6, 12),
+              padding: EdgeInsets.fromLTRB(16, topInset + 8, 12, 12),
               decoration: BoxDecoration(
                 color: palette.surface,
                 borderRadius:
@@ -429,81 +430,74 @@ class _GameScreenState extends State<GameScreen>
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+              child: Row(
                 children: [
-                    Row(
+                  // Left: small level label over the hearts + progress bar.
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        IconButton(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          icon: Icon(Icons.arrow_back, color: palette.arrow),
+                        Text(
+                          widget.level.difficulty == 'Daily'
+                              ? 'Daily'
+                              : 'Level ${widget.level.number}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: 0.5,
+                          ),
                         ),
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              widget.level.difficulty == 'Daily'
-                                  ? 'Daily'
-                                  : 'Level ${widget.level.number}',
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: palette.primary,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 22,
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            for (var i = 0; i < 3; i++)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 5),
+                                child: _HeartPip(alive: i < _lives, palette: palette),
+                              ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 10,
+                                  backgroundColor:
+                                      palette.primary.withValues(alpha: 0.15),
+                                  color: palette.primary,
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        _CoinChip(coins: coins),
-                        IconButton(
-                          tooltip: 'Pause',
-                          onPressed: () => showPauseDialog(
-                            context,
-                            onRestart: _confirmRestart,
-                            onHome: _confirmHome,
-                          ),
-                          icon: Icon(Icons.pause_circle_outline_rounded,
-                              color: palette.arrow),
+                            const SizedBox(width: 8),
+                            Text('${(progress * 100).round()}%',
+                                style: TextStyle(
+                                    color: palette.textMuted,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        children: [
-                          for (var i = 0; i < 3; i++)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: Icon(
-                                Icons.favorite,
-                                size: 22,
-                                color: i < _lives
-                                    ? const Color(0xFFE63946)
-                                    : palette.textMuted.withValues(alpha: 0.3),
-                              ),
-                            ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                minHeight: 10,
-                                backgroundColor:
-                                    palette.primary.withValues(alpha: 0.15),
-                                color: palette.primary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text('${(progress * 100).round()}%'),
-                        ],
-                      ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Right: chunky, themed pause button.
+                  ChunkyCircleButton(
+                    icon: Icons.pause_rounded,
+                    color: palette.primary,
+                    size: 46,
+                    iconSize: 26,
+                    onTap: () => showPauseDialog(
+                      context,
+                      onRestart: _confirmRestart,
+                      onHome: _confirmHome,
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
               ),
             ),
 
@@ -888,38 +882,24 @@ class _PowerButton extends StatelessWidget {
       );
 }
 
-/// Live coin balance pill for the header. Rebuilds (and so visibly ticks down)
-/// whenever coins are spent, since the screen subscribes to app state.
-class _CoinChip extends StatelessWidget {
-  const _CoinChip({required this.coins});
+/// A single life pip in the header — a glossy 3D heart when alive, a dimmed
+/// outline when lost. Pops/scales as the alive state changes for liveliness.
+class _HeartPip extends StatelessWidget {
+  const _HeartPip({required this.alive, required this.palette});
 
-  final int coins;
+  final bool alive;
+  final AppPalette palette;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: palette.background,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.monetization_on, size: 18, color: Color(0xFFF4B400)),
-          const SizedBox(width: 5),
-          Text(
-            '$coins',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 14,
-              color: palette.arrow,
-            ),
-          ),
-        ],
-      ),
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutBack,
+      scale: alive ? 1.0 : 0.82,
+      child: alive
+          ? const HeartIcon(size: 22)
+          : Icon(Icons.favorite_rounded,
+              size: 22, color: palette.textMuted.withValues(alpha: 0.3)),
     );
   }
 }

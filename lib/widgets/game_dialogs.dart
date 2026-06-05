@@ -12,6 +12,42 @@ import 'ui_kit.dart';
 /// Coin cost to replay an already-cleared level without spending a life.
 const int kReplayCoinCost = 450;
 
+/// A broken heart that gently pulses and wobbles — adds life to the
+/// fail / out-of-lives dialogs.
+class _PulseHeart extends StatefulWidget {
+  const _PulseHeart({this.size = 64});
+  final double size;
+
+  @override
+  State<_PulseHeart> createState() => _PulseHeartState();
+}
+
+class _PulseHeartState extends State<_PulseHeart>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, child) => Transform.rotate(
+        angle: 0.05 * (_c.value - 0.5),
+        child: Transform.scale(scale: 1.0 + 0.08 * _c.value, child: child),
+      ),
+      child: HeartBrokenIcon(size: widget.size),
+    );
+  }
+}
+
 /// Shown when the player taps an already-completed level. Big stars overhang the
 /// header; two ways to replay — pay coins (keep your life) or replay free
 /// (costs a life). [onReplay] launches the level once a cost is paid.
@@ -355,7 +391,7 @@ class _OutOfLivesBodyState extends State<_OutOfLivesBody> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const HeartBrokenIcon(size: 56),
+        const _PulseHeart(size: 56),
         const SizedBox(height: 6),
         Text(
           next == null
@@ -439,7 +475,7 @@ Future<void> showLevelFailed(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const HeartBrokenIcon(size: 64),
+          const _PulseHeart(size: 64),
           const SizedBox(height: 4),
           const Text(
             'You will lose a life',
