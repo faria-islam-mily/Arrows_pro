@@ -90,7 +90,7 @@ class _ArrowProAppState extends State<ArrowProApp>
               dark ? Brightness.light : Brightness.dark,
         ));
         return MaterialApp(
-          title: 'Arrow Pro',
+          title: 'Arrows Pro',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.fromPalette(palette),
           home: const SplashScreen(),

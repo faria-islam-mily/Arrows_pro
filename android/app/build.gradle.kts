@@ -18,8 +18,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.arrow_pro"
+        applicationId = "com.game.arrows_pro"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // google_mobile_ads 5.x requires at least API 23.

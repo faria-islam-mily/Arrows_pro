@@ -78,7 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
               FadeTransition(
                 opacity: _text,
                 child: const Text(
-                  'Arrow Pro',
+                  'Arrows Pro',
                   style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
                 ),
               ),
@@ -101,7 +101,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '— Arrow Pro',
+                        '— Arrows Pro',
                         style: TextStyle(
                           fontSize: 15,
                           color: palette.textMuted,
