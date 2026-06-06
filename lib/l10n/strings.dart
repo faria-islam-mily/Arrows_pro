@@ -105,6 +105,13 @@ class L10n {
   // Daily reward.
   String get dailyReward => _t('dailyReward');
   String get freeGift => _t('freeGift');
+
+  // Level complete / start.
+  String get completed => _t('completed');
+  String get reward => _t('reward');
+  String get next => _t('next');
+  String get watchDouble => _t('watchDouble');
+  String get collectGift => _t('collectGift');
   String get week => _t('week');
   String get day => _t('day');
   String get collect => _t('collect');
@@ -147,6 +154,7 @@ class L10n {
   String get processing => _t('processing');
   String get tutorialTap => _t('tutorialTap');
   String get newPower => _t('newPower');
+  String get unlocked => _t('unlocked');
   String get gotIt => _t('gotIt');
 
   // Power-up names + intro descriptions.
@@ -165,6 +173,14 @@ class L10n {
         PowerUp.eraser => _t('powerDescEraser'),
         PowerUp.magic => _t('powerDescMagic'),
         PowerUp.undo => _t('powerDescUndo'),
+      };
+
+  /// Short "how to use this power" line for the usage tutorial.
+  String powerTutorial(PowerUp p) => switch (p) {
+        PowerUp.hint => _t('tutHint'),
+        PowerUp.eraser => _t('tutEraser'),
+        PowerUp.magic => _t('tutMagic'),
+        PowerUp.undo => _t('tutUndo'),
       };
 }
 
@@ -682,6 +698,40 @@ const Map<String, Map<String, String>> _data = {
     'Japanese': 'タップして続ける', 'Korean': '탭하여 계속',
     'Russian': 'Нажмите, чтобы продолжить', 'Portuguese': 'Toque para continuar',
   },
+  'completed': {
+    'English': 'COMPLETED!', 'French': 'TERMINÉ !', 'Spanish': '¡COMPLETADO!',
+    'Dutch': 'VOLTOOID!', 'German': 'GESCHAFFT!', 'Turkish': 'TAMAMLANDI!',
+    'Swedish': 'KLARAD!', 'Italian': 'COMPLETATO!', 'Japanese': 'クリア！',
+    'Korean': '완료!', 'Russian': 'ПРОЙДЕНО!', 'Portuguese': 'CONCLUÍDO!',
+  },
+  'reward': {
+    'English': 'REWARD', 'French': 'RÉCOMPENSE', 'Spanish': 'RECOMPENSA',
+    'Dutch': 'BELONING', 'German': 'BELOHNUNG', 'Turkish': 'ÖDÜL',
+    'Swedish': 'BELÖNING', 'Italian': 'PREMIO', 'Japanese': '報酬',
+    'Korean': '보상', 'Russian': 'НАГРАДА', 'Portuguese': 'RECOMPENSA',
+  },
+  'next': {
+    'English': 'NEXT', 'French': 'SUIVANT', 'Spanish': 'SIGUIENTE',
+    'Dutch': 'VOLGENDE', 'German': 'WEITER', 'Turkish': 'İLERİ',
+    'Swedish': 'NÄSTA', 'Italian': 'AVANTI', 'Japanese': 'つぎへ',
+    'Korean': '다음', 'Russian': 'ДАЛЕЕ', 'Portuguese': 'PRÓXIMO',
+  },
+  'watchDouble': {
+    'English': 'WATCH FOR 2×', 'French': 'REGARDER POUR 2×',
+    'Spanish': 'VER PARA 2×', 'Dutch': 'KIJK VOOR 2×',
+    'German': 'FÜR 2× ANSEHEN', 'Turkish': '2× İÇİN İZLE',
+    'Swedish': 'SE FÖR 2×', 'Italian': 'GUARDA PER 2×',
+    'Japanese': '2倍を見る', 'Korean': '2배 영상 보기',
+    'Russian': 'СМОТРЕТЬ ЗА 2×', 'Portuguese': 'VER PARA 2×',
+  },
+  'collectGift': {
+    'English': 'Daily Gift!', 'French': 'Cadeau du jour !',
+    'Spanish': '¡Regalo diario!', 'Dutch': 'Dagelijks cadeau!',
+    'German': 'Tagesgeschenk!', 'Turkish': 'Günlük hediye!',
+    'Swedish': 'Daglig gåva!', 'Italian': 'Regalo giornaliero!',
+    'Japanese': 'デイリーギフト！', 'Korean': '데일리 선물!',
+    'Russian': 'Ежедневный подарок!', 'Portuguese': 'Presente diário!',
+  },
   'freeGift': {
     'English': 'FREE GIFT!', 'French': 'CADEAU GRATUIT !',
     'Spanish': '¡REGALO GRATIS!', 'Dutch': 'GRATIS CADEAU!',
@@ -936,6 +986,12 @@ const Map<String, Map<String, String>> _data = {
     'Russian': 'Нажми на светящуюся стрелку, чтобы убрать её!',
     'Portuguese': 'Toque na seta brilhante para deslizá-la!',
   },
+  'unlocked': {
+    'English': 'UNLOCKED!', 'French': 'DÉBLOQUÉ !', 'Spanish': '¡DESBLOQUEADO!',
+    'Dutch': 'ONTGRENDELD!', 'German': 'FREIGESCHALTET!', 'Turkish': 'AÇILDI!',
+    'Swedish': 'UPPLÅST!', 'Italian': 'SBLOCCATO!', 'Japanese': 'アンロック！',
+    'Korean': '잠금 해제!', 'Russian': 'ОТКРЫТО!', 'Portuguese': 'DESBLOQUEADO!',
+  },
   'newPower': {
     'English': 'NEW POWER', 'French': 'NOUVEAU POUVOIR',
     'Spanish': 'NUEVO PODER', 'Dutch': 'NIEUWE KRACHT',
@@ -973,6 +1029,62 @@ const Map<String, Map<String, String>> _data = {
     'Dutch': 'Ongedaan', 'German': 'Rückgängig', 'Turkish': 'Geri Al',
     'Swedish': 'Ångra', 'Italian': 'Annulla', 'Japanese': '元に戻す',
     'Korean': '되돌리기', 'Russian': 'Отмена', 'Portuguese': 'Desfazer',
+  },
+  'tutHint': {
+    'English': 'Tap to reveal a move!',
+    'French': 'Touche pour révéler un coup !',
+    'Spanish': '¡Toca para revelar un movimiento!',
+    'Dutch': 'Tik om een zet te tonen!',
+    'German': 'Tippe für einen Hinweis!',
+    'Turkish': 'Bir hamle göstermek için dokun!',
+    'Swedish': 'Tryck för att visa ett drag!',
+    'Italian': 'Tocca per rivelare una mossa!',
+    'Japanese': 'タップして手を表示！',
+    'Korean': '탭하여 수를 알려줘요!',
+    'Russian': 'Нажми, чтобы показать ход!',
+    'Portuguese': 'Toque para revelar uma jogada!',
+  },
+  'tutEraser': {
+    'English': 'Tap, then tap an arrow to remove it!',
+    'French': 'Touche, puis touche une flèche à enlever !',
+    'Spanish': '¡Toca y luego una flecha para quitarla!',
+    'Dutch': 'Tik, tik dan een pijl om te verwijderen!',
+    'German': 'Tippen, dann einen Pfeil zum Entfernen!',
+    'Turkish': 'Dokun, sonra kaldıracağın oka dokun!',
+    'Swedish': 'Tryck, tryck sedan på en pil att ta bort!',
+    'Italian': 'Tocca, poi tocca una freccia da togliere!',
+    'Japanese': 'タップして矢印をタップで消す！',
+    'Korean': '탭한 뒤 지울 화살표를 탭!',
+    'Russian': 'Нажми, потом нажми на стрелку!',
+    'Portuguese': 'Toque e depois toque numa seta!',
+  },
+  'tutMagic': {
+    'English': 'Tap to clear arrows!',
+    'French': 'Touche pour enlever des flèches !',
+    'Spanish': '¡Toca para despejar flechas!',
+    'Dutch': 'Tik om pijlen te wissen!',
+    'German': 'Tippe, um Pfeile zu räumen!',
+    'Turkish': 'Okları temizlemek için dokun!',
+    'Swedish': 'Tryck för att rensa pilar!',
+    'Italian': 'Tocca per togliere le frecce!',
+    'Japanese': 'タップで矢印を消す！',
+    'Korean': '탭하여 화살표를 치워요!',
+    'Russian': 'Нажми, чтобы убрать стрелки!',
+    'Portuguese': 'Toque para limpar setas!',
+  },
+  'tutUndo': {
+    'English': 'Tap to undo your move!',
+    'French': 'Touche pour annuler ton coup !',
+    'Spanish': '¡Toca para deshacer tu movimiento!',
+    'Dutch': 'Tik om je zet ongedaan te maken!',
+    'German': 'Tippe, um deinen Zug zurückzunehmen!',
+    'Turkish': 'Hamleni geri almak için dokun!',
+    'Swedish': 'Tryck för att ångra ditt drag!',
+    'Italian': 'Tocca per annullare la mossa!',
+    'Japanese': 'タップで手を戻す！',
+    'Korean': '탭하여 수를 되돌려요!',
+    'Russian': 'Нажми, чтобы отменить ход!',
+    'Portuguese': 'Toque para desfazer a jogada!',
   },
   'powerDescHint': {
     'English': 'Reveals an arrow you can move right now.',

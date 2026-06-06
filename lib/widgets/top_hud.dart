@@ -36,7 +36,7 @@ class _TopHudState extends State<TopHud>
     with SingleTickerProviderStateMixin {
   Timer? _timer;
   late final AnimationController _shine;
-  static const double _icon = 42; // all HUD icons share one size — balanced
+  static const double _icon = 36; // all HUD icons share one size — balanced
 
   @override
   void initState() {
@@ -222,43 +222,50 @@ class _HudPill extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.only(left: 3, right: 12),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    leading,
-                    if (label != null) ...[
-                      const SizedBox(width: 6),
-                      _BumpText(
-                        label!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 19,
-                          shadows: [
-                            Shadow(
-                                color: Color(0x55000000),
-                                offset: Offset(0, 1),
-                                blurRadius: 1),
+              // The 3D icon stays full-size; only the count text scales down so
+              // a long number can never shrink the icon (keeps all icons equal).
+              child: Row(
+                children: [
+                  leading,
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (label != null)
+                            _BumpText(
+                              label!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 19,
+                                shadows: [
+                                  Shadow(
+                                      color: Color(0x55000000),
+                                      offset: Offset(0, 1),
+                                      blurRadius: 1),
+                                ],
+                              ),
+                            ),
+                          if (trailing != null) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              trailing!,
+                              style: const TextStyle(
+                                color: Color(0xFFE3EDFF),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                    ],
-                    if (trailing != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        trailing!,
-                        style: const TextStyle(
-                          color: Color(0xFFE3EDFF),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -386,10 +393,10 @@ class _CoinWithPlus extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           CoinIcon(size: size),
-          Positioned(
+          const Positioned(
             right: -2,
             bottom: -2,
-            child: _PlusBadge(size: size * 0.5),
+            child: _PlusBadge(size: 16),
           ),
         ],
       ),
@@ -436,10 +443,10 @@ class _HeartWithNumber extends StatelessWidget {
           ),
           // Only when lives are regenerating (not full / infinite).
           if (showPlus)
-            Positioned(
+            const Positioned(
               right: -2,
               bottom: -2,
-              child: _PlusBadge(size: size * 0.5),
+              child: _PlusBadge(size: 16),
             ),
         ],
       ),

@@ -7,12 +7,14 @@ import '../data/shop_catalog.dart';
 import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/shop_service.dart';
+import '../services/ads_service.dart';
 import '../state/app_scope.dart';
 import '../state/app_state.dart';
 import '../theme/app_images.dart';
 import '../theme/game_colors.dart';
 import '../widgets/app_image.dart';
 import '../widgets/purchase_dialogs.dart';
+import '../widgets/reward_dialogs.dart';
 import '../widgets/ui_kit.dart';
 
 /// Maps a shop product to its 3D hero PNG.
@@ -64,12 +66,17 @@ class _ShopScreenState extends State<ShopScreen> {
     final state = AppScope.read(context);
     if (await state.claimDailyGift()) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('+${AppState.kDailyGiftCoins} coins!'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
+      showDailyGiftReward(
+        context,
+        coins: AppState.kDailyGiftCoins,
+        // Watch a rewarded video to double the gift (grants the extra coins).
+        onWatch2x: () async {
+          final earned = await AdsService.showRewarded();
+          if (earned && mounted) {
+            await AppScope.read(context).addCoins(AppState.kDailyGiftCoins);
+          }
+          return earned;
+        },
       );
     }
   }

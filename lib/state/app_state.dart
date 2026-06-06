@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/daily_rewards.dart';
 import '../data/levels.dart';
+import '../data/palettes.dart';
 import '../models/power_up.dart';
 import 'storage.dart';
 
@@ -16,6 +17,7 @@ class AppState extends ChangeNotifier {
   final Storage _storage;
 
   static const _kTheme = 'themeIndex';
+  static const _kArrowScheme = 'arrowSchemeIndex';
   static const _kUnlocked = 'unlockedLevel';
   static const _kStreak = 'streak';
   static const _kLastPlayed = 'lastPlayed';
@@ -44,6 +46,7 @@ class AppState extends ChangeNotifier {
   static const _kDailyGift = 'dailyGiftReadyMs';
 
   int _themeIndex = 0;
+  int _arrowSchemeIndex = 0; // index into kArrowSchemes
   int _unlockedLevel = 1; // highest level number the player may open
   int _streak = 0;
   String? _lastPlayed; // yyyy-mm-dd of last completed day
@@ -407,7 +410,20 @@ class AppState extends ChangeNotifier {
       _storage.setInt('themeMigratedV2', 1);
       _storage.setInt(_kTheme, 0);
     }
-    _themeIndex = _storage.getInt(_kTheme, 0);
+    // V3: the themes were reorganised (minimalist→gorgeous). Default everyone to
+    // "Midnight" (index 3) once — a premium dark board with great visibility.
+    if (_storage.getInt('themeMigratedV3', 0) == 0) {
+      _storage.setInt('themeMigratedV3', 1);
+      _storage.setInt(_kTheme, 3);
+    }
+    // V4: make "Arcade" (index 4) the default board theme.
+    if (_storage.getInt('themeMigratedV4', 0) == 0) {
+      _storage.setInt('themeMigratedV4', 1);
+      _storage.setInt(_kTheme, 4);
+    }
+    _themeIndex = _storage.getInt(_kTheme, 4).clamp(0, kPalettes.length - 1);
+    _arrowSchemeIndex =
+        _storage.getInt(_kArrowScheme, 0).clamp(0, kArrowSchemes.length - 1);
     _unlockedLevel = _storage.getInt(_kUnlocked, 1);
     _streak = _storage.getInt(_kStreak, 0);
     _lastPlayed = _storage.getString(_kLastPlayed);
@@ -502,6 +518,15 @@ class AppState extends ChangeNotifier {
     _themeIndex = index;
     notifyListeners();
     await _storage.setInt(_kTheme, index);
+  }
+
+  int get arrowSchemeIndex => _arrowSchemeIndex;
+
+  Future<void> setArrowScheme(int index) async {
+    if (index == _arrowSchemeIndex) return;
+    _arrowSchemeIndex = index;
+    notifyListeners();
+    await _storage.setInt(_kArrowScheme, index);
   }
 
   Future<void> setSound(bool on) async {

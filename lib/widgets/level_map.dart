@@ -6,11 +6,13 @@ import '../l10n/strings.dart';
 import '../screens/game_screen.dart';
 import '../screens/piggy_bank_screen.dart';
 import '../state/app_scope.dart';
+import '../state/main_nav.dart';
 import '../theme/app_images.dart';
 import '../theme/game_colors.dart';
 import 'app_image.dart';
 import 'game_dialogs.dart';
 import 'promo_dialogs.dart';
+import 'reward_dialogs.dart';
 import 'ui_kit.dart';
 
 /// How often a star-gate sits on the path (every N levels).
@@ -48,12 +50,24 @@ class _HomeMapState extends State<HomeMap> {
   void initState() {
     super.initState();
     _controller.addListener(_onScroll);
+    // Re-centre on the current level whenever the player returns to the Home tab.
+    kMainTab.addListener(_onTabChanged);
   }
 
   @override
   void dispose() {
+    kMainTab.removeListener(_onTabChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  // Home is tab index 1. Coming back to it snaps the current level to centre
+  // (the player can still scroll freely while on the tab).
+  void _onTabChanged() {
+    if (kMainTab.value != 1 || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollTo(_frontier);
+    });
   }
 
   int get _frontier => AppScope.read(context).unlockedLevel.clamp(1, kLevelCount);
@@ -93,7 +107,13 @@ class _HomeMapState extends State<HomeMap> {
       return;
     }
     if (number == frontier) {
-      _play(number);
+      // An unplayed level — show the start popup, then launch on PLAY.
+      showLevelStart(
+        context,
+        level: kLevels[number - 1],
+        arrowColor: context.palette.arrow,
+        onPlay: () => _play(number),
+      );
       return;
     }
     // A completed level — open its level dialog (replay options).
@@ -115,10 +135,27 @@ class _HomeMapState extends State<HomeMap> {
     _launch(number);
   }
 
-  void _launch(int number) {
-    Navigator.of(context).push(
+  Future<void> _launch(int number) async {
+    // GameScreen pops `true` from its "Next" button to chain to the next level.
+    final goNext = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => GameScreen(level: kLevels[number - 1])),
     );
+    if (!mounted) return;
+    // Back on the map — re-centre on the (possibly advanced) current level, and
+    // open the start popup for it when the player chose "Next".
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollTo(_frontier);
+      final f = _frontier;
+      if (goNext == true && f >= 1 && f <= kLevels.length) {
+        showLevelStart(
+          context,
+          level: kLevels[f - 1],
+          arrowColor: context.palette.arrow,
+          onPlay: () => _play(f),
+        );
+      }
+    });
   }
 
   void _goToCurrent() => _scrollTo(_frontier);
@@ -194,7 +231,7 @@ class _HomeMapState extends State<HomeMap> {
           child: Center(
             child: _PlayPulse(
               child: SizedBox(
-                width: 248,
+                width: 200,
                 child: _bottomButton(context, frontier),
               ),
             ),
@@ -589,9 +626,9 @@ class _BottomButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChunkyButton(
       color: color,
-      depth: 7,
-      radius: 20,
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      depth: 6,
+      radius: 18,
+      padding: const EdgeInsets.symmetric(vertical: 9),
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -600,7 +637,7 @@ class _BottomButton extends StatelessWidget {
             topLabel,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 24,
+              fontSize: 21,
               fontWeight: FontWeight.w900,
               letterSpacing: 1,
               shadows: [Shadow(color: Colors.black26, offset: Offset(0, 2))],
@@ -610,7 +647,7 @@ class _BottomButton extends StatelessWidget {
             bottomLabel,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.95),
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -688,7 +725,8 @@ class _SideRail extends StatelessWidget {
         ],
         _RailButton(
           color: const Color(0xFFF2A33C),
-          emoji: '🪙',
+          image: AppImages.offerSpecial,
+          emoji: '🪙', // fallback if the art is missing
           label: context.l10n.sale,
           onTap: () => showSpecialOffer(context),
         ),
@@ -745,10 +783,19 @@ class _RailButton extends StatelessWidget {
                   alignment: Alignment.center,
                   child: image != null
                       ? ClipOval(
-                          child: AppImage(image!, size: 48, fit: BoxFit.cover),
+                          child: AppImage(
+                            image!,
+                            size: 48,
+                            fit: BoxFit.cover,
+                            fallback: emoji != null
+                                ? Center(
+                                    child: Text(emoji!,
+                                        style: const TextStyle(fontSize: 38)))
+                                : null,
+                          ),
                         )
                       : Text(emoji ?? '',
-                          style: const TextStyle(fontSize: 24)),
+                          style: const TextStyle(fontSize: 38)),
                 ),
                 if (badge)
                   Positioned(

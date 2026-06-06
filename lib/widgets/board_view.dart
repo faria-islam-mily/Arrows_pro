@@ -187,6 +187,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final scheme = context.arrowScheme;
     final g = widget.game;
 
     return LayoutBuilder(
@@ -272,9 +273,11 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
                 blockedT: _blockCtrl.value,
                 blockedGap: _blockedGap,
                 previewId: _previewId,
-                color: palette.arrow,
+                themeArrow: palette.arrow,
+                arrowColors: scheme.usesTheme ? null : scheme.colors,
+                glow: palette.glow,
                 hintColor: palette.arrowActive,
-                dotColor: palette.textMuted,
+                dotColor: palette.dot,
                 exitingArrows: _exitingArrows,
                 exitProgress: _exitProgress,
               ),
@@ -296,7 +299,9 @@ class _BoardPainter extends CustomPainter {
     required this.blockedT,
     required this.blockedGap,
     required this.previewId,
-    required this.color,
+    required this.themeArrow,
+    required this.arrowColors,
+    required this.glow,
     required this.hintColor,
     required this.dotColor,
     required this.exitingArrows,
@@ -313,11 +318,20 @@ class _BoardPainter extends CustomPainter {
   final double blockedT; // 0..1 lunge progress for the blocked arrow
   final int blockedGap; // clear cells ahead of the blocked arrow's head
   final int? previewId; // long-pressed arrow showing its exit guide line
-  final Color color;
+  final Color themeArrow; // default (mono) arrow colour for this theme
+  final List<Color>? arrowColors; // multicolour set, or null = use themeArrow
+  final bool glow; // soft neon glow under arrows (gorgeous themes)
   final Color hintColor;
   final Color dotColor;
   final Map<int, GridArrow> exitingArrows;
   final Map<int, double> exitProgress;
+
+  /// The colour for arrow [a] under the active arrow-colour scheme.
+  Color _arrowColor(GridArrow a) {
+    final set = arrowColors;
+    if (set == null || set.isEmpty) return themeArrow;
+    return set[a.id % set.length];
+  }
 
   Offset _center(Point<int> p) =>
       Offset((p.x + 0.5) * cell + margin, (p.y + 0.5) * cell + margin);
@@ -408,7 +422,7 @@ class _BoardPainter extends CustomPainter {
     final offset = (t * t) * (bodyLen + rayLen); // ease-in, accelerates out
     final opacity = t < 0.82 ? 1.0 : (1 - (t - 0.82) / 0.18).clamp(0.0, 1.0);
 
-    _slither(canvas, a, offset, rayLen, color, opacity);
+    _slither(canvas, a, offset, rayLen, _arrowColor(a), opacity);
   }
 
   /// Draws [a]'s body advanced [offset] arc-length along its OWN poly-line (a
@@ -514,8 +528,8 @@ class _BoardPainter extends CustomPainter {
       if (!a.removed) occupied.addAll(a.cells);
     }
     // Crisp, clearly-visible dots (not a faint haze) — like the reference.
-    final dotPaint = Paint()..color = dotColor.withValues(alpha: 0.55);
-    final dotR = cell * 0.075;
+    final dotPaint = Paint()..color = dotColor.withValues(alpha: 0.7);
+    final dotR = cell * 0.08;
     for (final c in allCells) {
       if (occupied.contains(c)) continue;
       canvas.drawCircle(_center(c), dotR, dotPaint);
@@ -533,8 +547,28 @@ class _BoardPainter extends CustomPainter {
           ? _blockedColor
           : (a.id == hintId || a.id == previewId)
               ? hintColor
-              : color;
+              : _arrowColor(a);
       draws.add((a, col));
+    }
+
+    // Premium themes: a soft neon glow under every arrow. Drawn first and
+    // blurred so the crisp arrow on top stays perfectly readable.
+    if (glow) {
+      final glowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = cell * 0.30
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * 0.16);
+      for (final d in draws) {
+        final pts = d.$1.cells.map((p) => _center(p)).toList();
+        if (pts.length < 2) continue;
+        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+        for (final p in pts.skip(1)) {
+          path.lineTo(p.dx, p.dy);
+        }
+        canvas.drawPath(path, glowPaint..color = d.$2.withValues(alpha: 0.40));
+      }
     }
 
     for (final d in draws) {

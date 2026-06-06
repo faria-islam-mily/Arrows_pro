@@ -26,5 +26,8 @@ class AppScope extends InheritedNotifier<AppState> {
 
 extension AppContext on BuildContext {
   AppState get appState => AppScope.of(this);
-  AppPalette get palette => kPalettes[AppScope.of(this).themeIndex];
+  AppPalette get palette =>
+      kPalettes[AppScope.of(this).themeIndex.clamp(0, kPalettes.length - 1)];
+  ArrowScheme get arrowScheme =>
+      kArrowSchemes[AppScope.of(this).arrowSchemeIndex.clamp(0, kArrowSchemes.length - 1)];
 }

@@ -13,6 +13,7 @@ import '../services/ads_service.dart';
 import '../services/feedback_service.dart';
 import '../services/shop_service.dart';
 import '../state/app_scope.dart';
+import '../state/app_state.dart';
 import '../widgets/ad_banner.dart';
 import '../widgets/app_image.dart';
 import '../widgets/board_view.dart';
@@ -20,7 +21,9 @@ import '../widgets/booster_sheet.dart';
 import '../widgets/game_dialogs.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/power_intro_overlay.dart';
-import '../widgets/level_thumbnail.dart';
+import '../widgets/power_tutorial_overlay.dart';
+import '../widgets/power_use_fx.dart';
+import '../widgets/reward_dialogs.dart';
 import '../widgets/settings_dialog.dart';
 import '../widgets/tutorial_overlay.dart';
 import '../widgets/ui_kit.dart';
@@ -47,6 +50,13 @@ class _GameScreenState extends State<GameScreen>
   bool _showConfetti = false;
   bool _showTutorial = false;
   PowerUp? _introPower; // power being introduced on this level (intro overlay)
+  PowerUp? _tutorialPower; // power whose USAGE tutorial is showing (after CLAIM)
+  // A key per power tile, so the tutorial spotlight + use-FX can locate them.
+  final Map<PowerUp, GlobalKey> _powerKeys = {
+    for (final p in PowerUp.values) p: GlobalKey(),
+  };
+  PowerUp? _fxPower; // power whose use-activation FX is playing
+  Offset? _fxFrom; // global launch point for the FX (the button centre)
   int _lastRemaining = 0;
   int _coinsEarned = 0;
 
@@ -126,6 +136,17 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
+  /// System back button: route through the same confirm-and-lose-a-life flow as
+  /// Home (never a silent exit). Overlays take priority over leaving.
+  void _onSystemBack() {
+    if (_introPower != null) return; // must CLAIM the reveal first
+    if (_tutorialPower != null) {
+      setState(() => _tutorialPower = null); // back skips the usage tutorial
+      return;
+    }
+    _confirmHome();
+  }
+
   void _onChange() {
     // A successful tap reduces the remaining count; play the success feel.
     if (_game.remaining < _lastRemaining) {
@@ -179,12 +200,14 @@ class _GameScreenState extends State<GameScreen>
   // power's buy page.
 
   Future<void> _useHint() async {
+    _endTutorial(PowerUp.hint);
     if (_game.hintArrowId() == null) {
       _toast('No hint available right now');
       return;
     }
     if (await AppScope.read(context).usePower(PowerUp.hint)) {
       _feedback?.tick();
+      _playFx(PowerUp.hint);
       setState(() => _hintId = _game.hintArrowId());
     } else if (mounted) {
       showHintBoosterSheet(context);
@@ -192,12 +215,14 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Future<void> _useEraser() async {
+    _endTutorial(PowerUp.eraser);
     if (AppScope.read(context).powerCount(PowerUp.eraser) <= 0) {
       showEraserBoosterSheet(context);
       return;
     }
     _boardActions.armEraser?.call();
     _feedback?.tick();
+    _playFx(PowerUp.eraser);
     _toast('Tap any arrow to erase it');
   }
 
@@ -205,6 +230,7 @@ class _GameScreenState extends State<GameScreen>
   void _onEraserUsed() => AppScope.read(context).usePower(PowerUp.eraser);
 
   Future<void> _useMagic() async {
+    _endTutorial(PowerUp.magic);
     if (_game.hintArrowId() == null) {
       _toast('No movable arrow right now');
       return;
@@ -212,12 +238,14 @@ class _GameScreenState extends State<GameScreen>
     if (await AppScope.read(context).usePower(PowerUp.magic)) {
       _boardActions.autoStep?.call();
       _feedback?.tick();
+      _playFx(PowerUp.magic);
     } else if (mounted) {
       showMagicBoosterSheet(context);
     }
   }
 
   Future<void> _useUndo() async {
+    _endTutorial(PowerUp.undo);
     if (!_game.canUndo) {
       _toast('Nothing to undo');
       return;
@@ -225,6 +253,7 @@ class _GameScreenState extends State<GameScreen>
     if (await AppScope.read(context).usePower(PowerUp.undo)) {
       _boardActions.undo?.call();
       _feedback?.tick();
+      _playFx(PowerUp.undo);
     } else if (mounted) {
       showUndoBoosterSheet(context);
     }
@@ -249,66 +278,59 @@ class _GameScreenState extends State<GameScreen>
     });
   }
 
-  /// The player tapped "Got it" on a power's intro: grant the first one + mark
-  /// it seen so it never shows again.
+  /// CLAIM on a power's intro: grant 3 free to try, mark it seen, then start
+  /// the in-place usage tutorial.
   void _dismissIntro() {
     final p = _introPower;
     if (p == null) return;
     final state = AppScope.read(context);
-    state.addPower(p, 1);
+    state.addPower(p, 3);
     state.markIntroSeen(p);
     _feedback?.tick();
-    setState(() => _introPower = null);
+    setState(() {
+      _introPower = null;
+      _tutorialPower = p; // now teach how to use it
+    });
+  }
+
+  /// The usage tutorial ends the instant the player taps the highlighted power.
+  void _endTutorial(PowerUp p) {
+    if (_tutorialPower == p) setState(() => _tutorialPower = null);
+  }
+
+  /// Play the "power activated" flourish, launching from the power's button.
+  void _playFx(PowerUp p) {
+    final box = _powerKeys[p]?.currentContext?.findRenderObject();
+    Offset from;
+    if (box is RenderBox && box.hasSize) {
+      from = box.localToGlobal(box.size.center(Offset.zero));
+    } else {
+      final size = MediaQuery.of(context).size;
+      from = Offset(size.width / 2, size.height * 0.85);
+    }
+    setState(() {
+      _fxPower = p;
+      _fxFrom = from;
+    });
   }
 
   void _showWin() {
     if (!mounted) return;
-    final next = widget.level.number;
-    final inPack = next >= 1 && next <= kLevels.length;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _ResultDialog(
-        title: _lives >= 3
-            ? 'Splendid!'
-            : _lives == 2
-                ? 'Impressive!'
-                : 'You Did It!',
-        subtitle: 'Level ${widget.level.number} completed!',
-        pictureLevel: widget.level,
-        stars: _lives,
-        coins: _coinsEarned,
-        primaryLabel: (inPack && next < kLevels.length) ? 'Next Level' : 'Home',
-        onPrimary: () {
-          Navigator.of(context).pop();
-          if (inPack && next < kLevels.length) {
-            Navigator.of(context).pushReplacement(
-              _nextLevelRoute(kLevels[next]),
-            );
-          } else {
-            Navigator.of(context).pop();
-          }
-        },
-      ),
-    );
-  }
-
-  /// A lively transition to the next level: the new board scales + fades up
-  /// while the old one fades out beneath it.
-  Route<void> _nextLevelRoute(Level level) {
-    return PageRouteBuilder<void>(
-      transitionDuration: const Duration(milliseconds: 480),
-      reverseTransitionDuration: const Duration(milliseconds: 280),
-      pageBuilder: (_, __, ___) => GameScreen(level: level),
-      transitionsBuilder: (_, anim, __, child) {
-        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween(begin: 0.88, end: 1.0).animate(curved),
-            child: child,
-          ),
-        );
+    final n = widget.level.number;
+    final inPack = n >= 1 && n <= kLevels.length;
+    final hasNext = inPack && n < kLevels.length;
+    showLevelComplete(
+      context,
+      level: n,
+      stars: _lives,
+      coins: _coinsEarned,
+      piggy: AppState.kPiggyPerLevel,
+      hasNext: hasNext,
+      onNext: () {
+        Navigator.of(context).pop(); // close the complete dialog
+        // Back to the home map; `true` tells it to open the start popup for the
+        // next level (false / daily levels just return home).
+        Navigator.of(context).pop(hasNext);
       },
     );
   }
@@ -374,6 +396,7 @@ class _GameScreenState extends State<GameScreen>
     if (!st.isPowerUnlocked(p, widget.level.number)) {
       final lv = st.powerUnlockLevel(p);
       return _PowerButton(
+        key: _powerKeys[p],
         icon: icon,
         power: p,
         colors: colors,
@@ -383,6 +406,7 @@ class _GameScreenState extends State<GameScreen>
       );
     }
     return _PowerButton(
+      key: _powerKeys[p],
       icon: icon,
       power: p,
       colors: colors,
@@ -409,7 +433,14 @@ class _GameScreenState extends State<GameScreen>
     final state = context.appState;
     final topInset = MediaQuery.of(context).padding.top;
 
-    return Scaffold(
+    return PopScope(
+      // Intercept the Android system back so leaving mid-level goes through the
+      // same "lose a life" confirmation as the Home button (never a silent exit).
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _onSystemBack();
+      },
+      child: Scaffold(
       backgroundColor: palette.background,
       body: AnimatedBuilder(
         animation: _shake,
@@ -419,6 +450,19 @@ class _GameScreenState extends State<GameScreen>
         ),
         child: Stack(
           children: [
+          // Premium themes paint a gradient behind the (transparent) board.
+          if (palette.gradient != null)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: palette.gradient!,
+                  ),
+                ),
+              ),
+            ),
           // Full-screen, freely pannable board behind everything.
           Positioned.fill(
             child: BoardView(
@@ -604,160 +648,33 @@ class _GameScreenState extends State<GameScreen>
           // Power introduction (on the level a power unlocks).
           if (_introPower != null)
             PowerIntroOverlay(power: _introPower!, onDismiss: _dismissIntro),
+
+          // Usage tutorial — spotlight the new power button until it's tapped.
+          if (_tutorialPower != null)
+            PowerTutorialOverlay(
+              power: _tutorialPower!,
+              targetKey: _powerKeys[_tutorialPower!]!,
+              onSkip: () => setState(() => _tutorialPower = null),
+            ),
+
+          // Power-activation flourish (icon flies out + bursts on use).
+          if (_fxPower != null && _fxFrom != null)
+            PowerUseFxOverlay(
+              power: _fxPower!,
+              from: _fxFrom!,
+              onDone: () {
+                if (mounted) {
+                  setState(() {
+                    _fxPower = null;
+                    _fxFrom = null;
+                  });
+                }
+              },
+            ),
         ],
         ),
       ),
-    );
-  }
-}
-
-class _ResultDialog extends StatefulWidget {
-  const _ResultDialog({
-    required this.title,
-    required this.subtitle,
-    required this.primaryLabel,
-    required this.onPrimary,
-    this.stars,
-    this.coins = 0,
-    this.pictureLevel,
-  });
-
-  final String title;
-  final String subtitle;
-  final String primaryLabel;
-  final VoidCallback onPrimary;
-  final int? stars; // 1..3 to show a rating; null hides it
-  final int coins; // coins earned this level; 0 hides the row
-  final Level? pictureLevel; // show the cleared picture when set
-
-  @override
-  State<_ResultDialog> createState() => _ResultDialogState();
-}
-
-class _ResultDialogState extends State<_ResultDialog>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1150),
-    )..forward();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  double _seg(double a, double b) => ((_c.value - a) / (b - a)).clamp(0.0, 1.0);
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final stars = widget.stars;
-
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        final cardScale = Curves.easeOutBack.transform(_seg(0.0, 0.34));
-        return Opacity(
-          opacity: _seg(0.0, 0.18),
-          child: Transform.scale(
-            scale: cardScale,
-            child: Dialog(
-              backgroundColor: palette.surface,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24)),
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.pictureLevel != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: palette.background,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: LevelThumbnail(
-                          arrows: widget.pictureLevel!.arrows(),
-                          rows: widget.pictureLevel!.rows,
-                          cols: widget.pictureLevel!.cols,
-                          color: palette.arrow,
-                          size: 180,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                    ],
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                          fontSize: 28, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(widget.subtitle,
-                        style: TextStyle(color: palette.textMuted)),
-                    if (stars != null) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          for (var i = 0; i < 3; i++)
-                            Transform.scale(
-                              // Earned stars pop in one-by-one; empties stay put.
-                              scale: i < stars
-                                  ? Curves.easeOutBack.transform(
-                                      _seg(0.34 + i * 0.18, 0.58 + i * 0.18))
-                                  : 1.0,
-                              child: Icon(
-                                i < stars
-                                    ? Icons.star_rounded
-                                    : Icons.star_outline_rounded,
-                                size: 42,
-                                color: const Color(0xFFFFC83D),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                    if (widget.coins > 0) ...[
-                      const SizedBox(height: 14),
-                      Opacity(
-                        opacity: _seg(0.82, 1.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.monetization_on,
-                                color: Color(0xFFF4B400), size: 22),
-                            const SizedBox(width: 6),
-                            Text(
-                              '+${widget.coins}',
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w800),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                          onPressed: widget.onPrimary,
-                          child: Text(widget.primaryLabel)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+      ),
     );
   }
 }
@@ -767,6 +684,7 @@ class _ResultDialogState extends State<_ResultDialog>
 /// an optional green "+" badge (Hint). Disabled tiles desaturate + dim.
 class _PowerButton extends StatelessWidget {
   const _PowerButton({
+    super.key,
     required this.icon,
     required this.onTap,
     required this.colors,
