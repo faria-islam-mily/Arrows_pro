@@ -212,7 +212,7 @@ class _SpecialOfferPage extends StatelessWidget {
         ),
         const Spacer(),
         _PromoBuyButton(
-          label: offer.priceLabel,
+          label: offer.displayPrice,
           onTap: () => buyShopProduct(context, offer),
         ),
         const SizedBox(height: 8),
@@ -902,7 +902,7 @@ class _BundleTile extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                   onTap: onBuy,
-                  child: Text(offer.priceLabel,
+                  child: Text(offer.displayPrice,
                       style: const TextStyle(
                           color: Colors.white,
                           fontSize: 17,

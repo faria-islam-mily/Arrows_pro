@@ -8,6 +8,7 @@ import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/shop_service.dart';
 import '../services/ads_service.dart';
+import '../services/iap_service.dart';
 import '../state/app_scope.dart';
 import '../state/app_state.dart';
 import '../theme/app_images.dart';
@@ -400,7 +401,7 @@ class _OfferCard extends StatelessWidget {
           ),
           _CardFooter(
             title: p.title,
-            priceLabel: p.priceLabel,
+            priceLabel: p.displayPrice,
             onBuy: () => buyShopProduct(context, p),
           ),
         ],
@@ -453,8 +454,11 @@ class _NoAdsCard extends StatelessWidget {
             depth: 5,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             onTap: onBuy,
-            child: const Text('BDT 1,100',
-                style: TextStyle(
+            child: Text(
+                IapService.instance.removeAdsPrice.isEmpty
+                    ? 'BDT 1,100'
+                    : IapService.instance.removeAdsPrice,
+                style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
                     fontSize: 15)),
@@ -527,7 +531,7 @@ class _CoinPackCard extends StatelessWidget {
               ),
               alignment: Alignment.center,
               child: Text(
-                product.priceLabel,
+                product.displayPrice,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
@@ -589,7 +593,7 @@ class _BundleCard extends StatelessWidget {
           ),
           _CardFooter(
             title: product.title,
-            priceLabel: product.priceLabel,
+            priceLabel: product.displayPrice,
             onBuy: () => buyShopProduct(context, product),
           ),
         ],

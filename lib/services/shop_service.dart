@@ -1,47 +1,58 @@
 import 'package:flutter/material.dart';
 
 import '../data/shop_catalog.dart';
-import '../models/power_up.dart';
 import '../state/app_scope.dart';
-import '../state/app_state.dart';
 import '../widgets/processing_overlay.dart';
 import '../widgets/purchase_dialogs.dart';
 import 'ads_service.dart';
+import 'iap_service.dart';
+
+// grantShopReward moved to iap_service.dart (deliveries must run from the
+// store's purchase stream); re-exported here so existing imports keep working.
+// ShopProductPrice gives every catalog product a `.displayPrice` getter.
+export 'iap_service.dart' show grantShopReward, ShopProductPrice;
 
 /// While true, coin-pack / bundle purchases are GRANTED locally (dev/testing)
 /// after a fake processing delay, so the economy is fully testable before the
-/// real store products exist. Flip to false (and wire IapService for these
-/// product IDs, like remove_ads) to require real purchases.
+/// real store products exist. Flip to false once the products are created and
+/// ACTIVE in Play Console / App Store Connect — purchases then go through the
+/// real store via [IapService].
 const bool kShopDevGrant = true;
 
-/// Grants everything a [ShopProduct] contains to the player's account.
-Future<void> grantShopReward(AppState state, ShopProduct p) async {
-  if (p.coins > 0) await state.addCoins(p.coins);
-  if (p.infiniteHours > 0) {
-    await state.grantInfiniteLives(Duration(hours: p.infiniteHours));
-  }
-  if (p.hint > 0) await state.addPower(PowerUp.hint, p.hint);
-  if (p.eraser > 0) await state.addPower(PowerUp.eraser, p.eraser);
-  if (p.magic > 0) await state.addPower(PowerUp.magic, p.magic);
-  if (p.undo > 0) await state.addPower(PowerUp.undo, p.undo);
-}
-
 /// Buy a coin pack or bundle. Shows the processing spinner, then a success /
-/// failed dialog. (NO ADS uses [buyRemoveAds] directly — it's a real IAP.)
+/// failed dialog. (NO ADS uses [buyRemoveAds] directly — same machinery.)
 Future<void> buyShopProduct(BuildContext context, ShopProduct p) async {
-  if (!kShopDevGrant) {
-    // TODO: route through IapService.buyConsumable(p.id) and grant on confirm.
-    showPurchaseFailed(context,
-        message: 'This item isn\'t available yet.\nPlease try again later.');
+  if (kShopDevGrant) {
+    final state = AppScope.read(context);
+    showProcessing(context);
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    if (!context.mounted) return;
+    hideProcessing(context);
+    await grantShopReward(state, p);
+    if (context.mounted) showPurchaseSuccess(context);
     return;
   }
-  final state = AppScope.read(context);
+
+  // Real store purchase. The actual delivery (coins / lives / powers) happens
+  // inside IapService's purchase-stream handler when the store confirms; here
+  // we only drive the spinner and the result dialog.
   showProcessing(context);
-  await Future<void>.delayed(const Duration(milliseconds: 1400));
+  final result = await IapService.instance.buy(p.id);
   if (!context.mounted) return;
   hideProcessing(context);
-  await grantShopReward(state, p);
-  if (context.mounted) showPurchaseSuccess(context);
+
+  switch (result) {
+    case IapResult.success:
+      showPurchaseSuccess(context);
+    case IapResult.canceled:
+      break; // user backed out of the store sheet — no dialog needed
+    case IapResult.unavailable:
+      showPurchaseFailed(context,
+          message:
+              'This item isn\'t available yet.\nPlease try again later.');
+    case IapResult.failed:
+      showPurchaseFailed(context);
+  }
 }
 
 /// Show a real rewarded video; grant the coin bonus only if it was watched.

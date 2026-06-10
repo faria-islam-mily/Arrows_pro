@@ -6,6 +6,7 @@ import '../data/shop_catalog.dart';
 import '../l10n/strings.dart';
 import '../models/power_up.dart';
 import '../services/ads_service.dart';
+import '../services/iap_service.dart';
 import '../state/app_scope.dart';
 import '../state/main_nav.dart';
 import '../theme/app_images.dart';
@@ -1145,7 +1146,7 @@ class _SafetyNetTileState extends State<_SafetyNetTile>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 18, vertical: 16),
                     onTap: widget.onBuy,
-                    child: Text(offer.priceLabel,
+                    child: Text(offer.displayPrice,
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
