@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../data/daily_rewards.dart';
 import '../data/levels.dart';
 import '../data/palettes.dart';
+import '../data/profile_data.dart';
 import '../models/power_up.dart';
 import 'storage.dart';
 
@@ -41,6 +42,8 @@ class AppState extends ChangeNotifier {
   static const _kUsername = 'username';
   static const _kAvatar = 'avatarIndex';
   static const _kFrame = 'frameIndex';
+  static const _kBadge = 'badgeIndex';
+  static const _kProfileSeen = 'profileSeenLevel';
   static const _kProfileDone = 'profileDone';
   static const _kLanguage = 'languageName';
   static const _kDailyGift = 'dailyGiftReadyMs';
@@ -90,9 +93,12 @@ class AppState extends ChangeNotifier {
   String? _username;
   int _avatarIndex = 0;
   int _frameIndex = 0;
+  int _badgeIndex = -1; // chosen badge emblem (-1 = none)
+  int _profileSeenLevel = 1; // highest level acknowledged in the Profile page
   bool _profileDone = false; // shown the first-run name/avatar flow yet?
-  // Display language. Currently a saved UI preference (the picker reflects it);
-  // wiring it to full string translation is a future step.
+  // Display language. Drives the live in-app translation: widgets read it via
+  // [BuildContext.l10n] (see lib/l10n/strings.dart), so changing it re-renders
+  // the UI in that language. (Long-form help-article bodies stay English.)
   String _language = 'English';
 
   // ---- Daily free-coin gift (separate from the 7-day streak reward) ----
@@ -147,8 +153,27 @@ class AppState extends ChangeNotifier {
   bool get hasUsername => _username != null && _username!.trim().isNotEmpty;
   int get avatarIndex => _avatarIndex;
   int get frameIndex => _frameIndex;
+  int get badgeIndex => _badgeIndex;
   bool get profileDone => _profileDone;
   String get language => _language;
+
+  /// A new avatar/frame/badge has unlocked since the Profile was last opened.
+  bool get hasNewProfileItems =>
+      hasNewProfileUnlock(_profileSeenLevel, _unlockedLevel);
+
+  Future<void> setBadge(int index) async {
+    _badgeIndex = index;
+    notifyListeners();
+    await _storage.setInt(_kBadge, index);
+  }
+
+  /// Acknowledge profile unlocks (clears the HUD notification dot).
+  Future<void> markProfileSeen() async {
+    if (_profileSeenLevel >= _unlockedLevel) return;
+    _profileSeenLevel = _unlockedLevel;
+    notifyListeners();
+    await _storage.setInt(_kProfileSeen, _profileSeenLevel);
+  }
 
   Future<void> setLanguage(String name) async {
     _language = name;
@@ -274,10 +299,18 @@ class AppState extends ChangeNotifier {
   /// Spend one life (on a level fail). Starts the regen clock if we were full.
   Future<void> loseLife() async {
     if (hasInfiniteLives) return;
+    // First bank any already-regenerated lives AND advance the regen clock past
+    // "now" (same loop as [tick]). Without this, a stale clock pointing into the
+    // past would immediately regenerate the life we're about to spend — refunding
+    // the loss on the very next read (e.g. the first fail after a resume).
     _lives = _effectiveLives();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    while (_nextLifeMs != 0 && now >= _nextLifeMs && _lives < kMaxLives) {
+      _nextLifeMs += kLifeRegen.inMilliseconds;
+    }
+    // If we were full (clock idle), start a fresh regen clock from now.
     if (_lives >= kMaxLives || _nextLifeMs == 0) {
-      _nextLifeMs =
-          DateTime.now().millisecondsSinceEpoch + kLifeRegen.inMilliseconds;
+      _nextLifeMs = now + kLifeRegen.inMilliseconds;
     }
     _lives = (_lives - 1).clamp(0, kMaxLives);
     notifyListeners();
@@ -452,6 +485,11 @@ class AppState extends ChangeNotifier {
     _username = _storage.getString(_kUsername);
     _avatarIndex = _storage.getInt(_kAvatar, 0);
     _frameIndex = _storage.getInt(_kFrame, 0);
+    _badgeIndex = _storage.getInt(_kBadge, -1);
+    // First run (no key): seed "seen" at the current level so already-reached
+    // items don't all flash as new; from then on, fresh unlocks notify.
+    final seen = _storage.getInt(_kProfileSeen, -1);
+    _profileSeenLevel = seen < 0 ? _unlockedLevel : seen;
     _profileDone = _storage.getBool(_kProfileDone, false);
     _language = _storage.getString(_kLanguage) ?? 'English';
     _dailyGiftReadyMs = _storage.getInt(_kDailyGift, 0);

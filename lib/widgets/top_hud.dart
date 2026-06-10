@@ -92,8 +92,9 @@ class _TopHudState extends State<TopHud>
             child: AvatarBadge(
               avatarIndex: state.avatarIndex,
               frameIndex: state.frameIndex,
+              badgeIndex: state.badgeIndex,
               size: 46,
-              showDot: true,
+              showDot: state.hasNewProfileItems,
             ),
           ),
           const SizedBox(width: 5),

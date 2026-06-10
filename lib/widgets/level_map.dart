@@ -708,7 +708,8 @@ class _SideRail extends StatelessWidget {
           color: const Color(0xFFE85C9A),
           image: AppImages.piggyBank,
           label: context.l10n.piggy,
-          badge: true,
+          // Only notify when there are coins ready to collect (breakable).
+          badge: context.appState.canBreakPiggy,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const PiggyBankScreen()),
           ),

@@ -25,6 +25,7 @@ class AdsService {
       // Ads simply won't show (e.g. on an unsupported platform / no network).
     }
     loadRewarded(); // warm a rewarded ad for the first "Watch" tap
+    loadInterstitial(); // warm an interstitial for the first level break
   }
 
   // ---- Rewarded video ----------------------------------------------------
@@ -97,6 +98,75 @@ class AdsService {
     return completer.future;
   }
 
+  // ---- Interstitial (full-screen, at level breaks) -----------------------
+
+  static InterstitialAd? _interstitial;
+  static bool _loadingInterstitial = false;
+  static int _interGate = 0; // only show on every Nth break (less intrusive)
+
+  /// Preload an interstitial (no-op if one is ready or already loading).
+  static void loadInterstitial() {
+    if (_interstitial != null || _loadingInterstitial) return;
+    _loadingInterstitial = true;
+    InterstitialAd.load(
+      adUnitId: interstitialUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitial = ad;
+          _loadingInterstitial = false;
+        },
+        onAdFailedToLoad: (_) {
+          _interstitial = null;
+          _loadingInterstitial = false;
+        },
+      ),
+    );
+  }
+
+  /// Show a full-screen interstitial at a level break — but only on every other
+  /// break so it isn't intrusive. Resolves when the ad is dismissed, or
+  /// immediately if it's not this break's turn / none is ready. Callers should
+  /// gate on `!adsRemoved` before calling.
+  static Future<void> maybeShowInterstitial() async {
+    _interGate++;
+    if (_interGate % 2 != 0) {
+      loadInterstitial(); // warm one for next time
+      return;
+    }
+    final ad = _interstitial;
+    if (ad == null) {
+      loadInterstitial();
+      return;
+    }
+    _interstitial = null;
+    final completer = Completer<void>();
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        loadInterstitial();
+        if (!completer.isCompleted) completer.complete();
+      },
+      onAdFailedToShowFullScreenContent: (ad, _) {
+        ad.dispose();
+        loadInterstitial();
+        if (!completer.isCompleted) completer.complete();
+      },
+    );
+    ad.show();
+    return completer.future;
+  }
+
+  static String get interstitialUnitId {
+    if (kReleaseMode) {
+      return Platform.isIOS ? _iosInterstitial : _androidInterstitial;
+    }
+    // Google's official sample interstitial units.
+    return Platform.isIOS
+        ? 'ca-app-pub-3940256099942544/4411468910'
+        : 'ca-app-pub-3940256099942544/1033173712';
+  }
+
   static String get rewardedUnitId {
     if (kReleaseMode) {
       return Platform.isIOS ? _iosRewarded : _androidRewarded;
@@ -128,5 +198,9 @@ class AdsService {
   static const String _androidRewarded =
       'ca-app-pub-0000000000000000/0000000000';
   static const String _iosRewarded =
+      'ca-app-pub-0000000000000000/0000000000';
+  static const String _androidInterstitial =
+      'ca-app-pub-0000000000000000/0000000000';
+  static const String _iosInterstitial =
       'ca-app-pub-0000000000000000/0000000000';
 }

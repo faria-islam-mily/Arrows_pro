@@ -14,12 +14,14 @@ class AvatarBadge extends StatelessWidget {
     super.key,
     required this.avatarIndex,
     required this.frameIndex,
+    this.badgeIndex = -1,
     this.size = 46,
     this.showDot = false,
   });
 
   final int avatarIndex;
   final int frameIndex;
+  final int badgeIndex; // chosen badge emblem (-1 = none)
   final double size;
   final bool showDot;
 
@@ -60,6 +62,27 @@ class AvatarBadge extends StatelessWidget {
             ),
           ),
         ),
+        // Chosen badge emblem, bottom-right.
+        if (badgeIndex >= 0 && badgeIndex < kBadges.length)
+          Positioned(
+            right: -size * 0.06,
+            bottom: -size * 0.06,
+            child: Container(
+              width: size * 0.42,
+              height: size * 0.42,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: kBadges[badgeIndex].colors,
+                ),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: size * 0.03),
+              ),
+              child: Icon(kBadges[badgeIndex].icon,
+                  color: Colors.white, size: size * 0.24),
+            ),
+          ),
         if (showDot)
           Positioned(
             top: -3,
@@ -231,6 +254,13 @@ class _ProfileBody extends StatefulWidget {
 class _ProfileBodyState extends State<_ProfileBody> {
   _Tab _tab = _Tab.avatar;
 
+  @override
+  void initState() {
+    super.initState();
+    // Opening the Profile acknowledges any new unlocks → clears the HUD dot.
+    AppScope.read(context).markProfileSeen();
+  }
+
   void _toast(String m) => ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
       );
@@ -253,6 +283,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
               AvatarBadge(
                 avatarIndex: state.avatarIndex,
                 frameIndex: state.frameIndex,
+                badgeIndex: state.badgeIndex,
                 size: 56,
               ),
               const SizedBox(width: 12),
@@ -312,50 +343,83 @@ class _ProfileBodyState extends State<_ProfileBody> {
     );
   }
 
+  /// Pick an item if its [unlockLevel] is reached, else toast when it unlocks.
+  void _choose(int unlockLevel, VoidCallback select) {
+    if (unlockLevel <= context.appState.unlockedLevel) {
+      select();
+    } else {
+      _toast(context.l10n.unlocksAt(unlockLevel));
+    }
+  }
+
+  Widget _grid(List<Widget> children) => GridView.count(
+        crossAxisCount: 3,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        children: children,
+      );
+
   Widget _tabContent(state) {
+    final reached = state.unlockedLevel as int;
     switch (_tab) {
       case _Tab.avatar:
-        return GridView.count(
-          crossAxisCount: 3,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          children: [
-            for (var i = 0; i < kAvatars.length; i++)
-              _AvatarTile(
-                index: i,
-                selected: state.avatarIndex == i,
-                onTap: () => state.setAvatar(i),
+        return _grid([
+          for (var i = 0; i < kAvatars.length; i++)
+            _CollectTile(
+              selected: state.avatarIndex == i,
+              locked: kAvatars[i].unlockLevel > reached,
+              unlockLevel: kAvatars[i].unlockLevel,
+              onTap: () => _choose(kAvatars[i].unlockLevel, () => state.setAvatar(i)),
+              child: AppImage(
+                kAvatars[i].asset,
+                size: 90,
+                fit: BoxFit.cover,
+                fallback: Center(
+                    child: Text(kAvatars[i].emoji,
+                        style: const TextStyle(fontSize: 34))),
               ),
-          ],
-        );
+            ),
+        ]);
       case _Tab.frame:
-        return GridView.count(
-          crossAxisCount: 3,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          children: [
-            for (var i = 0; i < kFrames.length; i++)
-              _FrameTile(
-                index: i,
-                selected: state.frameIndex == i,
-                onTap: () {
-                  if (kFrames[i].unlocked) {
-                    state.setFrame(i);
-                  } else {
-                    _toast(context.l10n.unlockFrameLater);
-                  }
-                },
-              ),
-          ],
-        );
+        return _grid([
+          for (var i = 0; i < kFrames.length; i++)
+            _CollectTile(
+              selected: state.frameIndex == i,
+              locked: kFrames[i].unlockLevel > reached,
+              unlockLevel: kFrames[i].unlockLevel,
+              fill: kFrames[i].color,
+              onTap: () => _choose(kFrames[i].unlockLevel, () => state.setFrame(i)),
+              child: const SizedBox.expand(),
+            ),
+        ]);
       case _Tab.badge:
-        return Center(
-          child: Text(context.l10n.comingSoon,
-              style: const TextStyle(
-                  color: GameColors.inkMuted,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900)),
-        );
+        return _grid([
+          for (var i = 0; i < kBadges.length; i++)
+            _CollectTile(
+              selected: state.badgeIndex == i,
+              locked: kBadges[i].unlockLevel > reached,
+              unlockLevel: kBadges[i].unlockLevel,
+              onTap: () => _choose(kBadges[i].unlockLevel, () => state.setBadge(i)),
+              child: Center(
+                child: Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: kBadges[i].colors,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x33000000), blurRadius: 4)
+                    ],
+                  ),
+                  child: Icon(kBadges[i].icon, color: Colors.white, size: 30),
+                ),
+              ),
+            ),
+        ]);
     }
   }
 }
@@ -403,23 +467,34 @@ class _Tabs extends StatelessWidget {
   }
 }
 
-class _AvatarTile extends StatelessWidget {
-  const _AvatarTile(
-      {required this.index, required this.selected, required this.onTap});
-  final int index;
+/// A unified collectible tile (avatar / frame / badge): shows [child], a green
+/// border + check when selected, and a lock + "Lv N" overlay when [locked].
+class _CollectTile extends StatelessWidget {
+  const _CollectTile({
+    required this.selected,
+    required this.locked,
+    required this.unlockLevel,
+    required this.onTap,
+    required this.child,
+    this.fill,
+  });
   final bool selected;
+  final bool locked;
+  final int unlockLevel;
   final VoidCallback onTap;
+  final Widget child;
+  final Color? fill; // tile background (used by frames to preview the colour)
 
   @override
   Widget build(BuildContext context) {
-    final avatar = kAvatars[index];
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Stack(
         children: [
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFCBD8EC),
+              color: fill ?? const Color(0xFFCBD8EC),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: selected ? GameColors.green : Colors.white,
@@ -427,67 +502,31 @@ class _AvatarTile extends StatelessWidget {
               ),
             ),
             clipBehavior: Clip.antiAlias,
-            child: AppImage(
-              avatar.asset,
-              size: 90,
-              fit: BoxFit.cover,
-              fallback: Center(
-                  child: Text(avatar.emoji, style: const TextStyle(fontSize: 36))),
-            ),
+            child: Opacity(opacity: locked ? 0.45 : 1.0, child: child),
           ),
-          if (selected)
-            const Positioned(
-              right: 2,
-              bottom: 2,
-              child: CircleAvatar(
-                radius: 11,
-                backgroundColor: GameColors.green,
-                child: Icon(Icons.check_rounded, color: Colors.white, size: 16),
+          if (locked)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.lock_rounded,
+                        color: Colors.white, size: 24),
+                    const SizedBox(height: 2),
+                    Text('Lv $unlockLevel',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900)),
+                  ],
+                ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FrameTile extends StatelessWidget {
-  const _FrameTile(
-      {required this.index, required this.selected, required this.onTap});
-  final int index;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final frame = kFrames[index];
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              color: frame.color,
-              border: Border.all(
-                color: selected ? GameColors.green : Colors.white,
-                width: 3,
-              ),
-            ),
-            padding: const EdgeInsets.all(10),
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF3E7BE8),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              alignment: Alignment.center,
-              child: frame.unlocked
-                  ? null
-                  : const Icon(Icons.lock_rounded,
-                      color: Color(0xFFFFC02E), size: 26),
-            ),
-          ),
-          if (selected)
+          if (selected && !locked)
             const Positioned(
               right: 2,
               bottom: 2,

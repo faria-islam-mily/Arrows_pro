@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -22,6 +24,9 @@ class AdBanner extends StatefulWidget {
 class _AdBannerState extends State<AdBanner> {
   BannerAd? _ad;
   bool _loaded = false;
+  int _retries = 0;
+  Timer? _retryTimer;
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -30,15 +35,34 @@ class _AdBannerState extends State<AdBanner> {
   }
 
   void _load() {
+    if (_disposed) return;
     final ad = BannerAd(
       adUnitId: AdsService.bannerUnitId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (_) {
+          _retries = 0;
           if (mounted) setState(() => _loaded = true);
         },
-        onAdFailedToLoad: (ad, error) => ad.dispose(),
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose(); // free the failed ad and stop pointing at it
+          if (_disposed) return;
+          _ad = null;
+          if (mounted) setState(() => _loaded = false);
+          // Retry with backoff (8s, 16s, 32s, 60s) so a transient network blip
+          // doesn't leave the placeholder up for the whole session.
+          if (_retries < 4) {
+            _retries++;
+            _retryTimer?.cancel();
+            _retryTimer = Timer(
+              Duration(seconds: (4 << _retries).clamp(8, 60)),
+              () {
+                if (!_disposed && !AppScope.read(context).adsRemoved) _load();
+              },
+            );
+          }
+        },
       ),
     );
     _ad = ad;
@@ -47,6 +71,8 @@ class _AdBannerState extends State<AdBanner> {
 
   @override
   void dispose() {
+    _disposed = true;
+    _retryTimer?.cancel();
     _ad?.dispose();
     super.dispose();
   }
@@ -56,6 +82,7 @@ class _AdBannerState extends State<AdBanner> {
     final state = context.appState;
     // Purchased → release the ad and take up no space.
     if (state.adsRemoved) {
+      _retryTimer?.cancel();
       _ad?.dispose();
       _ad = null;
       return const SizedBox.shrink();

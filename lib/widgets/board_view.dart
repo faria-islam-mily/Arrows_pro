@@ -53,6 +53,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
   int? _blockedId; // arrow currently doing the "blocked" lunge
   int _blockedGap = 0; // clear cells between its head and the blocker ahead
   late final AnimationController _blockCtrl;
+  late final AnimationController _entrance; // one-shot board "level reveal"
   bool _eraserArmed = false; // next tapped arrow is erased even if blocked
   int? _previewId; // arrow being long-pressed (shows its exit guide line)
 
@@ -70,6 +71,16 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
           setState(() => _blockedId = null);
         }
       });
+    // A one-shot "level reveal": arrows cascade in (see _BoardPainter.entrance).
+    // Held back briefly so the big "LEVEL N" banner plays first, then the
+    // arrows cascade in as it swooshes away.
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    Future.delayed(const Duration(milliseconds: 720), () {
+      if (mounted) _entrance.forward();
+    });
     _bindActions();
   }
 
@@ -176,6 +187,7 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _entrance.dispose();
     _blockCtrl.dispose();
     _tc.dispose();
     for (final c in _controllers.values) {
@@ -221,16 +233,22 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
         final w = cell * g.cols + margin * 2;
         final h = cell * g.rows + margin * 2;
 
-        // Center the board once on first layout (in the visible band between the
-        // HUD and the Hint bar). After that the user is free to drag it anywhere
-        // (we never re-center, so their pan isn't reset).
+        // Open with the WHOLE puzzle in view: scale the board down so it fits
+        // the visible band (never scaled up past 1×, so small boards stay crisp),
+        // then centre it. Done once on first layout; after that the player is
+        // free to pinch-zoom in and pan anywhere (we never re-centre).
         if (!_didCenter) {
           _didCenter = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            final dx = (cons.maxWidth - w) / 2;
-            final dy = reservedTop + (visibleH - h) / 2;
-            _tc.value = Matrix4.identity()..translateByDouble(dx, dy, 0, 1);
+            final fitW = (cons.maxWidth - pad * 2).clamp(1.0, double.infinity);
+            final fitH = (visibleH - pad * 2).clamp(1.0, double.infinity);
+            final fit = min(min(fitW / w, fitH / h), 1.0);
+            final dx = (cons.maxWidth - w * fit) / 2;
+            final dy = reservedTop + (visibleH - h * fit) / 2;
+            _tc.value = Matrix4.identity()
+              ..translateByDouble(dx, dy, 0, 1)
+              ..scaleByDouble(fit, fit, 1, 1);
           });
         }
 
@@ -262,24 +280,30 @@ class _BoardViewState extends State<BoardView> with TickerProviderStateMixin {
             },
             onLongPressEnd: (_) => setState(() => _previewId = null),
             onLongPressCancel: () => setState(() => _previewId = null),
-            child: CustomPaint(
-              size: Size(w, h),
-              painter: _BoardPainter(
-                game: g,
-                cell: cell,
-                margin: margin,
-                hintId: widget.hintId,
-                blockedId: _blockedId,
-                blockedT: _blockCtrl.value,
-                blockedGap: _blockedGap,
-                previewId: _previewId,
-                themeArrow: palette.arrow,
-                arrowColors: scheme.usesTheme ? null : scheme.colors,
-                glow: palette.glow,
-                hintColor: palette.arrowActive,
-                dotColor: palette.dot,
-                exitingArrows: _exitingArrows,
-                exitProgress: _exitProgress,
+            // The board paints itself with a staggered "level reveal": arrows
+            // fade + rise into place top→bottom (see _BoardPainter.entrance).
+            child: AnimatedBuilder(
+              animation: _entrance,
+              builder: (context, _) => CustomPaint(
+                size: Size(w, h),
+                painter: _BoardPainter(
+                  game: g,
+                  cell: cell,
+                  margin: margin,
+                  hintId: widget.hintId,
+                  blockedId: _blockedId,
+                  blockedT: _blockCtrl.value,
+                  blockedGap: _blockedGap,
+                  previewId: _previewId,
+                  themeArrow: palette.arrow,
+                  arrowColors: scheme.usesTheme ? null : scheme.colors,
+                  glow: palette.glow,
+                  hintColor: palette.arrowActive,
+                  dotColor: palette.dot,
+                  exitingArrows: _exitingArrows,
+                  exitProgress: _exitProgress,
+                  entrance: _entrance.value,
+                ),
               ),
             ),
           ),
@@ -306,6 +330,7 @@ class _BoardPainter extends CustomPainter {
     required this.dotColor,
     required this.exitingArrows,
     required this.exitProgress,
+    required this.entrance,
   });
 
   static const _blockedColor = Color(0xFFE63946); // red flash on blocked tap
@@ -325,6 +350,21 @@ class _BoardPainter extends CustomPainter {
   final Color dotColor;
   final Map<int, GridArrow> exitingArrows;
   final Map<int, double> exitProgress;
+  final double entrance; // 0..1 one-shot "level reveal"; 1 = fully shown
+
+  /// Reveal state for arrow [a] during the level entrance: (opacity, shift).
+  /// Arrows cascade in top→bottom — each fades + rises into place. Returns
+  /// fully-shown once the entrance has settled.
+  (double, Offset) _reveal(Point<int> firstCell) {
+    if (entrance >= 1) return (1.0, Offset.zero);
+    final h = cell * game.rows + margin * 2;
+    final phase = (_center(firstCell).dy / h).clamp(0.0, 1.0);
+    const spread = 0.68, window = 0.34;
+    final lt = ((entrance - phase * spread) / window).clamp(0.0, 1.0);
+    final op = Curves.easeOut.transform(lt);
+    final shift = Offset(0, (1 - Curves.easeOutBack.transform(lt)) * cell * 0.55);
+    return (op, shift);
+  }
 
   /// The colour for arrow [a] under the active arrow-colour scheme.
   Color _arrowColor(GridArrow a) {
@@ -572,10 +612,12 @@ class _BoardPainter extends CustomPainter {
     }
 
     for (final d in draws) {
-      _drawShaft(canvas, d.$1, d.$2, 1.0, Offset.zero);
+      final (op, shift) = _reveal(d.$1.cells.first);
+      if (op > 0) _drawShaft(canvas, d.$1, d.$2, op, shift);
     }
     for (final d in draws) {
-      _drawHead(canvas, d.$1, d.$2, 1.0, Offset.zero);
+      final (op, shift) = _reveal(d.$1.cells.first);
+      if (op > 0) _drawHead(canvas, d.$1, d.$2, op, shift);
     }
 
     // Long-press preview: a thin guide line from the held arrow's head straight

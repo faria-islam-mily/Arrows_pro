@@ -145,6 +145,7 @@ class L10n {
   String get createUsername => _t('createUsername');
   String get profile => _t('profile');
   String get unlockFrameLater => _t('unlockFrameLater');
+  String unlocksAt(int n) => _t('unlocksAt').replaceFirst('{n}', '$n');
   String get comingSoon => _t('comingSoon');
   String get avatar => _t('avatar');
   String get frame => _t('frame');
@@ -927,6 +928,15 @@ const Map<String, Map<String, String>> _data = {
     'Dutch': 'Profiel', 'German': 'Profil', 'Turkish': 'Profil',
     'Swedish': 'Profil', 'Italian': 'Profilo', 'Japanese': 'プロフィール',
     'Korean': '프로필', 'Russian': 'Профиль', 'Portuguese': 'Perfil',
+  },
+  'unlocksAt': {
+    'English': 'Unlocks at Level {n}!', 'French': 'Débloqué au niveau {n} !',
+    'Spanish': '¡Se desbloquea en el nivel {n}!',
+    'Dutch': 'Ontgrendelt op level {n}!', 'German': 'Bei Level {n} freigeschaltet!',
+    'Turkish': '{n}. seviyede açılır!', 'Swedish': 'Låses upp på nivå {n}!',
+    'Italian': 'Si sblocca al livello {n}!', 'Japanese': 'レベル{n}でアンロック！',
+    'Korean': '레벨 {n}에서 잠금 해제!', 'Russian': 'Откроется на уровне {n}!',
+    'Portuguese': 'Desbloqueia no nível {n}!',
   },
   'unlockFrameLater': {
     'English': 'Unlock this frame later!',

@@ -23,6 +23,7 @@ import '../widgets/confetti_overlay.dart';
 import '../widgets/power_intro_overlay.dart';
 import '../widgets/power_tutorial_overlay.dart';
 import '../widgets/power_use_fx.dart';
+import '../widgets/level_intro_banner.dart';
 import '../widgets/reward_dialogs.dart';
 import '../widgets/settings_dialog.dart';
 import '../widgets/tutorial_overlay.dart';
@@ -49,6 +50,7 @@ class _GameScreenState extends State<GameScreen>
   bool _completed = false;
   bool _showConfetti = false;
   bool _showTutorial = false;
+  bool _showLevelIntro = true; // big "LEVEL N" reveal banner on open
   PowerUp? _introPower; // power being introduced on this level (intro overlay)
   PowerUp? _tutorialPower; // power whose USAGE tutorial is showing (after CLAIM)
   // A key per power tile, so the tutorial spotlight + use-FX can locate them.
@@ -326,8 +328,14 @@ class _GameScreenState extends State<GameScreen>
       coins: _coinsEarned,
       piggy: AppState.kPiggyPerLevel,
       hasNext: hasNext,
-      onNext: () {
+      onNext: () async {
         Navigator.of(context).pop(); // close the complete dialog
+        // A full-screen ad at the level break — skipped for Remove Ads owners,
+        // and only on every other break (see maybeShowInterstitial).
+        if (!AppScope.read(context).adsRemoved) {
+          await AdsService.maybeShowInterstitial();
+        }
+        if (!mounted) return;
         // Back to the home map; `true` tells it to open the start popup for the
         // next level (false / daily levels just return home).
         Navigator.of(context).pop(hasNext);
@@ -640,6 +648,19 @@ class _GameScreenState extends State<GameScreen>
                   if (mounted) setState(() => _showConfetti = false);
                 },
               ),
+            ),
+
+          // Big "LEVEL N" reveal that swooshes in on open (skipped on levels
+          // that show the power-unlock takeover instead). The board's arrows
+          // cascade in as it leaves.
+          if (_showLevelIntro && _introPower == null)
+            LevelIntroBanner(
+              label: widget.level.difficulty == 'Daily'
+                  ? context.l10n.daily.toUpperCase()
+                  : '${context.l10n.level.toUpperCase()} ${widget.level.number}',
+              onDone: () {
+                if (mounted) setState(() => _showLevelIntro = false);
+              },
             ),
 
           // First-run coach (interactive — closes only when you clear an arrow).
